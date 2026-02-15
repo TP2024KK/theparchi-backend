@@ -68,8 +68,7 @@ const companySchema = new mongoose.Schema({
   },
   owner: {
     type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
+    ref: 'User'
   },
   isActive: {
     type: Boolean,
