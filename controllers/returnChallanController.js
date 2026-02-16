@@ -55,41 +55,42 @@ export const getReturnChallan = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// @desc  Create return challan
+// @desc  Create return challan (multi-challan: items from different challans)
 // @route POST /api/return-challans
 export const createReturnChallan = async (req, res, next) => {
   try {
-    const { originalChallan: originalId, items, notes, returnType, returnDate } = req.body;
+    const { party: partyId, items, notes, returnType, returnDate } = req.body;
 
-    // Validate original challan
-    const original = await Challan.findOne({
-      _id: originalId,
-      company: req.user.company,
-      'partyResponse.status': 'accepted'
-    });
+    if (!items?.length) return res.status(400).json({ success: false, message: 'At least one item required' });
 
-    if (!original) {
-      return res.status(400).json({ success: false, message: 'Challan not found or not accepted yet. Only accepted challans can have return challans.' });
-    }
-
-    // Validate return quantities don't exceed available
+    // Validate and update each item's source challan
+    const challanCache = {};
     for (const item of items) {
+      if (!item.originalChallan) continue;
+      if (!challanCache[item.originalChallan]) {
+        challanCache[item.originalChallan] = await Challan.findOne({
+          _id: item.originalChallan,
+          company: req.user.company,
+          'partyResponse.status': 'accepted'
+        });
+      }
+      const challan = challanCache[item.originalChallan];
+      if (!challan) continue;
       if (item.originalItem) {
-        const origItem = original.items.id(item.originalItem);
+        const origItem = challan.items.id(item.originalItem);
         if (origItem) {
-          const alreadyReturned = origItem.returnedQty || 0;
-          const available = origItem.quantity - alreadyReturned;
+          const available = origItem.quantity - (origItem.returnedQty || 0);
           if (item.quantity > available) {
             return res.status(400).json({
               success: false,
-              message: `Cannot return ${item.quantity} of "${item.itemName}". Only ${available} available (${origItem.quantity} sent - ${alreadyReturned} already returned).`
+              message: `Cannot return ${item.quantity} of "${item.itemName}" from ${challan.challanNumber}. Only ${available} available.`
             });
           }
         }
       }
     }
 
-    // Generate return challan number
+    // Generate number
     const company = await Company.findById(req.user.company);
     const prefix = company.settings?.returnChallanPrefix || 'RCH';
     const nextNum = company.settings?.nextReturnChallanNumber || 1;
@@ -105,41 +106,46 @@ export const createReturnChallan = async (req, res, next) => {
       return { ...item, amount, gstAmount };
     });
 
+    // Get party from first challan if not provided
+    let party = partyId;
+    if (!party) {
+      const firstChallanId = items.find(i => i.originalChallan)?.originalChallan;
+      if (firstChallanId && challanCache[firstChallanId]) {
+        party = challanCache[firstChallanId].party;
+      }
+    }
+
     const rc = await ReturnChallan.create({
       company: req.user.company,
       returnChallanNumber,
-      originalChallan: originalId,
-      party: original.party,
+      party,
       returnDate: returnDate || new Date(),
       items: processedItems,
-      subtotal,
-      totalGST,
+      subtotal, totalGST,
       grandTotal: subtotal + totalGST,
       notes,
       returnType: returnType || 'party_return',
       createdBy: req.user.id
     });
 
-    // Update returnedQty on original challan items
+    // Update returnedQty on each source challan
     for (const item of items) {
-      if (item.originalItem) {
-        const origItem = original.items.id(item.originalItem);
-        if (origItem) {
-          origItem.returnedQty = (origItem.returnedQty || 0) + item.quantity;
+      if (item.originalChallan && item.originalItem) {
+        const challan = challanCache[item.originalChallan];
+        if (challan) {
+          const origItem = challan.items.id(item.originalItem);
+          if (origItem) {
+            origItem.returnedQty = (origItem.returnedQty || 0) + Number(item.quantity);
+            await challan.save();
+          }
         }
       }
     }
-    await original.save();
 
-    // Increment company counter
     company.settings.nextReturnChallanNumber = nextNum + 1;
     await company.save();
 
-    const populated = await ReturnChallan.findById(rc._id)
-      .populate('party', 'name')
-      .populate('originalChallan', 'challanNumber');
-
-    res.status(201).json({ success: true, data: populated, message: `Return Challan ${returnChallanNumber} created!` });
+    res.status(201).json({ success: true, data: rc, message: `Return Challan ${returnChallanNumber} created!` });
   } catch (err) { next(err); }
 };
 
