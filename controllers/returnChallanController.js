@@ -8,7 +8,6 @@ export const getAcceptedChallans = async (req, res, next) => {
   try {
     const challans = await Challan.find({
       company: req.user.company,
-      status: 'sent',
       'partyResponse.status': 'accepted'
     })
     .populate('party', 'name')
@@ -66,12 +65,11 @@ export const createReturnChallan = async (req, res, next) => {
     const original = await Challan.findOne({
       _id: originalId,
       company: req.user.company,
-      status: 'sent',
       'partyResponse.status': 'accepted'
     });
 
     if (!original) {
-      return res.status(400).json({ success: false, message: 'Original challan not found or not accepted yet.' });
+      return res.status(400).json({ success: false, message: 'Challan not found or not accepted yet. Only accepted challans can have return challans.' });
     }
 
     // Validate return quantities don't exceed available
@@ -183,10 +181,10 @@ export const acceptMargin = async (req, res, next) => {
 export const getLedger = async (req, res, next) => {
   try {
     const { party, from, to } = req.query;
+    // Include ALL challans that have been accepted (party or self)
     const filter = {
       company: req.user.company,
-      status: 'sent',
-      'partyResponse.status': 'accepted' // includes both party-accepted and self-accepted
+      'partyResponse.status': 'accepted'
     };
     if (party) filter.party = party;
     if (from || to) {
@@ -260,6 +258,6 @@ export const getLedger = async (req, res, next) => {
       }
     }
 
-    res.json({ success: true, data: ledger, total: ledger.length });
+    res.json({ success: true, data: ledger || [], total: ledger.length });
   } catch (err) { next(err); }
 };
