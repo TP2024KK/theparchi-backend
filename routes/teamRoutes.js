@@ -1,23 +1,14 @@
 import express from 'express';
-import {
-  getTeamMembers,
-  addTeamMember,
-  updateTeamMember,
-  removeTeamMember
-} from '../controllers/teamController.js';
-import { protect, restrictTo } from '../middleware/auth.js';
+import { getTeamMembers, addTeamMember, updateTeamMember, removeTeamMember, getSFPRecipients, sendForProcessing, getMyPermissions } from '../controllers/teamController.js';
+import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
-
-// All routes are protected
 router.use(protect);
 
-// Get team members - all authenticated users can view
-router.get('/', getTeamMembers);
-
-// Add, update, delete team members - only owner and admin
-router.post('/', restrictTo('owner', 'admin'), addTeamMember);
-router.put('/:id', restrictTo('owner', 'admin'), updateTeamMember);
-router.delete('/:id', restrictTo('owner'), removeTeamMember);
+router.get('/my-permissions', getMyPermissions);
+router.get('/sfp-recipients', getSFPRecipients);
+router.post('/sfp/:challanId', sendForProcessing);
+router.route('/').get(getTeamMembers).post(addTeamMember);
+router.route('/:id').put(updateTeamMember).delete(removeTeamMember);
 
 export default router;
