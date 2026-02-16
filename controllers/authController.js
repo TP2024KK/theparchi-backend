@@ -141,10 +141,10 @@ export const login = async (req, res, next) => {
           name: user.name,
           email: user.email,
           role: user.role,
-          company: {
+          company: user.company ? {
             id: user.company._id,
             name: user.company.name
-          },
+          } : null
         }
       }
     });

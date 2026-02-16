@@ -1,7 +1,6 @@
 import TeamMember from '../models/TeamMember.js';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
-import bcrypt from 'bcryptjs';
 
 // Helper: check if user is owner
 const isOwner = async (userId, companyId) => {
@@ -44,11 +43,10 @@ export const addTeamMember = async (req, res, next) => {
       if (existing) return res.status(400).json({ success: false, message: 'User already in your team' });
     } else {
       // Create new user account
-      const salt = await bcrypt.genSalt(10);
-      const hashedPassword = await bcrypt.hash(tempPassword || 'Temp@1234', salt);
+      // Don't pre-hash - User model pre-save hook handles hashing automatically
       user = await User.create({
         name, email: email.toLowerCase(), phone,
-        password: hashedPassword,
+        password: tempPassword || 'Temp@1234',
         company: req.user.company,
         isVerified: true
       });
@@ -229,11 +227,10 @@ export const resetMemberPassword = async (req, res, next) => {
     if (!member) return res.status(404).json({ success: false, message: 'Member not found' });
     if (member.role === 'owner') return res.status(403).json({ success: false, message: 'Cannot change owner password here' });
 
-    const bcrypt = await import('bcryptjs');
-    const salt = await bcrypt.default.genSalt(10);
-    const hashed = await bcrypt.default.hash(newPassword, salt);
-
-    await User.findByIdAndUpdate(member.user._id, { password: hashed });
+    // Use findById + save() so pre-save hook hashes the password
+    const userToUpdate = await User.findById(member.user._id).select('+password');
+    userToUpdate.password = newPassword;
+    await userToUpdate.save();
 
     // Store plain password in TeamMember so admin can see it
     member.tempPassword = newPassword;
