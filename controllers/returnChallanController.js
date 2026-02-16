@@ -181,7 +181,6 @@ export const acceptMargin = async (req, res, next) => {
 export const getLedger = async (req, res, next) => {
   try {
     const { party, from, to } = req.query;
-    // Include ALL challans that have been accepted (party or self)
     const filter = {
       company: req.user.company,
       'partyResponse.status': 'accepted'
@@ -197,14 +196,14 @@ export const getLedger = async (req, res, next) => {
       .populate('party', 'name phone')
       .sort({ challanDate: -1 });
 
-    // Get all return challans for these challan IDs (check both RC level and item level)
+    if (!challans.length) {
+      return res.json({ success: true, data: [], total: 0 });
+    }
+
+    // Get all return challans for this company
     const challanIds = challans.map(c => c._id);
     const returnChallans = await ReturnChallan.find({
-      company: req.user.company,
-      $or: [
-        { originalChallan: { $in: challanIds } },
-        { 'items.originalChallan': { $in: challanIds } }
-      ]
+      company: req.user.company
     }).sort({ returnDate: 1 });
 
     // Build ledger rows
