@@ -9,7 +9,7 @@ export const getAcceptedChallans = async (req, res, next) => {
     const challans = await Challan.find({
       company: req.user.company,
       status: 'sent',
-      'partyResponse.status': { $in: ['accepted'] }
+      'partyResponse.status': 'accepted'
     })
     .populate('party', 'name')
     .select('challanNumber party challanDate items grandTotal')
@@ -186,7 +186,7 @@ export const getLedger = async (req, res, next) => {
     const filter = {
       company: req.user.company,
       status: 'sent',
-      'partyResponse.status': 'accepted'
+      'partyResponse.status': 'accepted' // includes both party-accepted and self-accepted
     };
     if (party) filter.party = party;
     if (from || to) {
@@ -197,14 +197,16 @@ export const getLedger = async (req, res, next) => {
 
     const challans = await Challan.find(filter)
       .populate('party', 'name phone')
-      .populate('items.marginAccepted.acceptedBy', 'name')
       .sort({ challanDate: -1 });
 
-    // Get all return challans for these challan IDs
+    // Get all return challans for these challan IDs (check both RC level and item level)
     const challanIds = challans.map(c => c._id);
     const returnChallans = await ReturnChallan.find({
-      originalChallan: { $in: challanIds },
-      company: req.user.company
+      company: req.user.company,
+      $or: [
+        { originalChallan: { $in: challanIds } },
+        { 'items.originalChallan': { $in: challanIds } }
+      ]
     }).sort({ returnDate: 1 });
 
     // Build ledger rows
@@ -214,18 +216,19 @@ export const getLedger = async (req, res, next) => {
         // Find all returns for this item
         const itemReturns = [];
         for (const rc of returnChallans) {
-          if (rc.originalChallan.toString() === challan._id.toString()) {
-            const returnedItem = rc.items.find(ri =>
-              ri.originalItem?.toString() === item._id.toString()
-            );
-            if (returnedItem) {
-              itemReturns.push({
-                returnChallanNumber: rc.returnChallanNumber,
-                returnDate: rc.returnDate,
-                returnQty: returnedItem.quantity,
-                returnType: rc.returnType
-              });
-            }
+          // Check item-level originalChallan (new multi-challan returns)
+          const returnedItem = rc.items.find(ri =>
+            ri.originalItem?.toString() === item._id.toString() &&
+            (ri.originalChallan?.toString() === challan._id.toString() ||
+             rc.originalChallan?.toString() === challan._id.toString())
+          );
+          if (returnedItem) {
+            itemReturns.push({
+              returnChallanNumber: rc.returnChallanNumber,
+              returnDate: rc.returnDate,
+              returnQty: returnedItem.quantity,
+              returnType: rc.returnType
+            });
           }
         }
 
