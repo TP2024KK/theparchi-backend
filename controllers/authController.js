@@ -53,9 +53,8 @@ export const signup = async (req, res, next) => {
       console.error('Welcome email failed:', err)
     );
 
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
+    // Use updateOne to bypass pre-save hook (avoid re-hashing password)
+    await User.updateOne({ _id: user._id }, { lastLogin: new Date() });
 
     res.status(201).json({
       success: true,
@@ -97,36 +96,31 @@ export const login = async (req, res, next) => {
     }
 
     // Check if user exists (include password for comparison)
-    const user = await User.findOne({ email }).select('+password').populate('company', 'name');
+    const user = await User.findOne({ email: email.toLowerCase() }).select('+password').populate('company', 'name');
 
     if (!user) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
+      console.log('Login failed: user not found for email:', email);
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Check if user is active
     if (!user.isActive) {
-      return res.status(401).json({
-        success: false,
-        message: 'Your account has been deactivated. Please contact your administrator.'
-      });
+      return res.status(401).json({ success: false, message: 'Your account has been deactivated. Please contact your administrator.' });
     }
 
-    // Check password
+    if (!user.company) {
+      console.log('Login failed: user has no company:', user._id);
+      return res.status(401).json({ success: false, message: 'Account not linked to any company. Contact your admin.' });
+    }
+
     const isPasswordCorrect = await user.comparePassword(password);
+    console.log('Login attempt for:', email, '| password match:', isPasswordCorrect);
 
     if (!isPasswordCorrect) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
+    // Use updateOne to bypass pre-save hook (avoid re-hashing password)
+    await User.updateOne({ _id: user._id }, { lastLogin: new Date() });
 
     // Generate token
     const token = generateToken(user._id);
