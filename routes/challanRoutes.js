@@ -1,5 +1,5 @@
 import express from 'express';
-import {
+import { sendChallan,
   createChallan,
   getChallans,
   getChallan,
@@ -7,7 +7,7 @@ import {
   deleteChallan,
   getChallanStats
 } from '../controllers/challanController.js';
-import { protect, checkPermission } from '../middleware/auth.js';
+import { sendChallan, protect, checkPermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -26,5 +26,7 @@ router.route('/:id')
   .get(checkPermission('challans', 'read'), getChallan)
   .put(checkPermission('challans', 'update'), updateChallan)
   .delete(checkPermission('challans', 'delete'), deleteChallan);
+
+router.post('/:id/send', protect, sendChallan);
 
 export default router;

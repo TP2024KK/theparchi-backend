@@ -295,3 +295,58 @@ export const getChallanStats = async (req, res, next) => {
     next(error);
   }
 };
+
+// @desc  Send challan to party via email
+// @route POST /api/challans/:id/send
+export const sendChallan = async (req, res, next) => {
+  try {
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company })
+      .populate('party', 'name email phone')
+      .populate('company', 'name email');
+
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
+
+    const party = challan.party;
+    if (!party.email) {
+      return res.status(400).json({ success: false, message: 'Party does not have an email address. Please add email to party first.' });
+    }
+
+    // Generate unique public token
+    const crypto = await import('crypto');
+    const publicToken = crypto.default.randomBytes(32).toString('hex');
+
+    // Update challan
+    challan.publicToken = publicToken;
+    challan.status = 'sent';
+    challan.emailSentAt = new Date();
+    challan.emailSentTo = party.email;
+    challan.partyResponse = { status: 'pending' };
+    await challan.save();
+
+    // Build public link
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    const publicLink = `${frontendUrl}/challan/view/${publicToken}`;
+
+    // Send email
+    const { sendChallanEmail } = await import('../utils/email.js');
+    await sendChallanEmail(
+      party.email,
+      party.name,
+      challan.company.name || req.user.company,
+      challan.challanNumber,
+      new Date(challan.challanDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      challan.grandTotal,
+      publicLink,
+      challan.items
+    );
+
+    res.json({
+      success: true,
+      message: `Challan sent to ${party.email} successfully!`,
+      data: { publicLink, emailSentTo: party.email }
+    });
+  } catch (err) {
+    console.error('Send challan error:', err);
+    next(err);
+  }
+};

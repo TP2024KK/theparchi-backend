@@ -92,7 +92,27 @@ const challanSchema = new mongoose.Schema({
   returnChallans: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ReturnChallan'
-  }]
+  }],
+  publicToken: {
+    type: String,
+    unique: true,
+    sparse: true
+  },
+  partyOTP: {
+    code: String,
+    expiresAt: Date
+  },
+  partyResponse: {
+    status: {
+      type: String,
+      enum: ['pending', 'accepted', 'rejected'],
+      default: 'pending'
+    },
+    respondedAt: Date,
+    remarks: String
+  },
+  emailSentAt: Date,
+  emailSentTo: String
 }, {
   timestamps: true
 });

@@ -12,15 +12,34 @@ import returnChallanRoutes from './routes/returnChallanRoutes.js';
 import partyRoutes from './routes/partyRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
+import publicRoutes from './routes/publicRoutes.js';
 
 const app = express();
 
 // Security middleware
 app.use(helmet());
 
-// CORS
+// CORS - Allow multiple origins
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost:5174',
+  process.env.FRONTEND_URL,
+].filter(Boolean);
+
 app.use(cors({
-  origin: true,
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, curl)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    // Also allow any onrender.com or vercel.app domain
+    if (origin.includes('onrender.com') || origin.includes('vercel.app') || origin.includes('netlify.app')) {
+      return callback(null, true);
+    }
+    return callback(null, true); // Allow all for now during development
+  },
   credentials: true
 }));
 
@@ -58,6 +77,7 @@ app.use('/api/return-challans', returnChallanRoutes);
 app.use('/api/parties', partyRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/company', companyRoutes);
+app.use('/api/public', publicRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
