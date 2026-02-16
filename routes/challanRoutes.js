@@ -6,7 +6,8 @@ import {
   updateChallan,
   deleteChallan,
   getChallanStats,
-  sendChallan
+  sendChallan,
+  selfActionChallan
 } from '../controllers/challanController.js';
 import { protect, checkPermission } from '../middleware/auth.js';
 
@@ -20,6 +21,9 @@ router.get('/stats', getChallanStats);
 
 // Send challan to party
 router.post('/:id/send', sendChallan);
+
+// Self Accept/Reject
+router.post('/:id/self-action', selfActionChallan);
 
 // CRUD routes
 router.route('/')

@@ -109,7 +109,9 @@ const challanSchema = new mongoose.Schema({
       default: 'pending'
     },
     respondedAt: Date,
-    remarks: String
+    remarks: String,
+    selfAction: { type: Boolean, default: false },
+    actionBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' }
   },
   emailSentAt: Date,
   emailSentTo: String

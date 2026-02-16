@@ -350,3 +350,44 @@ export const sendChallan = async (req, res, next) => {
     next(err);
   }
 };
+
+// @desc  Self Accept or Reject challan (by sender for their own records)
+// @route POST /api/challans/:id/self-action
+export const selfActionChallan = async (req, res, next) => {
+  try {
+    const { action, remarks } = req.body;
+
+    if (!['accepted', 'rejected'].includes(action)) {
+      return res.status(400).json({ success: false, message: 'Action must be accepted or rejected' });
+    }
+
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company });
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
+
+    if (challan.status !== 'sent') {
+      return res.status(400).json({ success: false, message: 'Only sent challans can be self-actioned' });
+    }
+
+    if (challan.partyResponse?.status !== 'pending') {
+      return res.status(400).json({ success: false, message: `Challan already ${challan.partyResponse?.status}` });
+    }
+
+    challan.partyResponse = {
+      status: action,
+      respondedAt: new Date(),
+      remarks: remarks || '',
+      selfAction: true,
+      actionBy: req.user.id
+    };
+
+    await challan.save();
+
+    res.json({
+      success: true,
+      message: `Challan self-${action} successfully!`,
+      data: challan
+    });
+  } catch (err) {
+    next(err);
+  }
+};
