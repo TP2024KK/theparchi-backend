@@ -2,6 +2,23 @@ import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
+// Generic send email helper
+const sendEmail = async ({ to, subject, html }) => {
+  try {
+    const { data, error } = await resend.emails.send({
+      from: `${process.env.FROM_NAME || 'TheParchi'} <${process.env.FROM_EMAIL}>`,
+      to,
+      subject,
+      html
+    });
+    if (error) throw new Error(error.message);
+    return data;
+  } catch (err) {
+    console.error('Email send error:', err.message);
+    throw err;
+  }
+};
+
 /**
  * Send password reset OTP email
  */
