@@ -9,6 +9,8 @@ import errorHandler from './middleware/errorHandler.js';
 import authRoutes from './routes/authRoutes.js';
 import challanRoutes from './routes/challanRoutes.js';
 import returnChallanRoutes from './routes/returnChallanRoutes.js';
+import receivedChallanRoutes from './routes/receivedChallanRoutes.js';
+import notificationRoutes from './routes/notificationRoutes.js';
 import partyRoutes from './routes/partyRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
@@ -74,6 +76,8 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/challans', challanRoutes);
 app.use('/api/return-challans', returnChallanRoutes);
+app.use('/api/received-challans', receivedChallanRoutes);
+app.use('/api/notifications', notificationRoutes);
 app.use('/api/parties', partyRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/company', companyRoutes);

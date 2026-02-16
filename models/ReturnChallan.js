@@ -1,9 +1,8 @@
 import mongoose from 'mongoose';
 
 const returnItemSchema = new mongoose.Schema({
-  originalItem: {
-    type: mongoose.Schema.Types.ObjectId, // ref to original challan item
-  },
+  originalChallan: { type: mongoose.Schema.Types.ObjectId, ref: 'Challan' }, // which challan this item came from
+  originalItem: { type: mongoose.Schema.Types.ObjectId }, // original item _id in that challan
   itemName: { type: String, required: true },
   hsn: String,
   description: String,
@@ -13,13 +12,13 @@ const returnItemSchema = new mongoose.Schema({
   amount: { type: Number, default: 0 },
   gstRate: { type: Number, default: 0 },
   gstAmount: { type: Number, default: 0 },
-  isNewItem: { type: Boolean, default: false } // true if not from original challan
+  isNewItem: { type: Boolean, default: false }
 });
 
 const returnChallanSchema = new mongoose.Schema({
   company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
   returnChallanNumber: { type: String, required: true, unique: true },
-  originalChallan: { type: mongoose.Schema.Types.ObjectId, ref: 'Challan', required: true },
+  originalChallan: { type: mongoose.Schema.Types.ObjectId, ref: 'Challan' }, // primary challan (optional, for backward compat)
   party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', required: true },
   returnDate: { type: Date, default: Date.now },
   items: [returnItemSchema],
