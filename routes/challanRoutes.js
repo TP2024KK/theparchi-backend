@@ -1,13 +1,14 @@
 import express from 'express';
-import { sendChallan,
+import {
   createChallan,
   getChallans,
   getChallan,
   updateChallan,
   deleteChallan,
-  getChallanStats
+  getChallanStats,
+  sendChallan
 } from '../controllers/challanController.js';
-import { sendChallan, protect, checkPermission } from '../middleware/auth.js';
+import { protect, checkPermission } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -16,6 +17,9 @@ router.use(protect);
 
 // Stats route (before :id route)
 router.get('/stats', getChallanStats);
+
+// Send challan to party
+router.post('/:id/send', sendChallan);
 
 // CRUD routes
 router.route('/')
@@ -26,7 +30,5 @@ router.route('/:id')
   .get(checkPermission('challans', 'read'), getChallan)
   .put(checkPermission('challans', 'update'), updateChallan)
   .delete(checkPermission('challans', 'delete'), deleteChallan);
-
-router.post('/:id/send', protect, sendChallan);
 
 export default router;
