@@ -13,6 +13,7 @@ import partyRoutes from './routes/partyRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
+import returnChallanRoutes from './routes/returnChallanRoutes.js';
 
 const app = express();
 
@@ -78,6 +79,7 @@ app.use('/api/parties', partyRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/company', companyRoutes);
 app.use('/api/public', publicRoutes);
+app.use('/api/return-challans', returnChallanRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {

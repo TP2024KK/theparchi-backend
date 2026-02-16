@@ -1,25 +1,21 @@
 import express from 'express';
 import {
-  createReturnChallan,
+  getAcceptedChallans,
   getReturnChallans,
   getReturnChallan,
-  updateReturnChallan,
-  deleteReturnChallan
+  createReturnChallan,
+  acceptMargin,
+  getLedger
 } from '../controllers/returnChallanController.js';
-import { protect, checkPermission } from '../middleware/auth.js';
+import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
-
-// All routes are protected
 router.use(protect);
 
-router.route('/')
-  .get(checkPermission('returnChallans', 'read'), getReturnChallans)
-  .post(checkPermission('returnChallans', 'create'), createReturnChallan);
-
-router.route('/:id')
-  .get(checkPermission('returnChallans', 'read'), getReturnChallan)
-  .put(checkPermission('returnChallans', 'update'), updateReturnChallan)
-  .delete(checkPermission('returnChallans', 'delete'), deleteReturnChallan);
+router.get('/accepted-challans', getAcceptedChallans);
+router.get('/ledger', getLedger);
+router.post('/accept-margin', acceptMargin);
+router.route('/').get(getReturnChallans).post(createReturnChallan);
+router.route('/:id').get(getReturnChallan);
 
 export default router;

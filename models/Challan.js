@@ -37,6 +37,15 @@ const challanItemSchema = new mongoose.Schema({
   gstAmount: {
     type: Number,
     default: 0
+  },
+  hsn: String,
+  returnedQty: { type: Number, default: 0 },
+  marginAccepted: {
+    accepted: { type: Boolean, default: false },
+    acceptedAt: Date,
+    acceptedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    comment: String,
+    balanceQtyAtAcceptance: Number
   }
 });
 

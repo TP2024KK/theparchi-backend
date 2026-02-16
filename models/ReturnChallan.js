@@ -1,109 +1,44 @@
 import mongoose from 'mongoose';
 
 const returnItemSchema = new mongoose.Schema({
-  itemName: {
-    type: String,
-    required: true,
-    trim: true
+  originalItem: {
+    type: mongoose.Schema.Types.ObjectId, // ref to original challan item
   },
-  description: {
-    type: String,
-    trim: true
-  },
-  quantityReturned: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  unit: {
-    type: String,
-    default: 'pcs'
-  },
-  rate: {
-    type: Number,
-    required: true,
-    min: 0
-  },
-  amount: {
-    type: Number,
-    required: true
-  },
-  gstRate: {
-    type: Number,
-    default: 0
-  },
-  gstAmount: {
-    type: Number,
-    default: 0
-  },
-  reason: {
-    type: String,
-    trim: true
-  }
+  itemName: { type: String, required: true },
+  hsn: String,
+  description: String,
+  quantity: { type: Number, required: true, min: 0 },
+  unit: { type: String, default: 'pcs' },
+  rate: { type: Number, default: 0 },
+  amount: { type: Number, default: 0 },
+  gstRate: { type: Number, default: 0 },
+  gstAmount: { type: Number, default: 0 },
+  isNewItem: { type: Boolean, default: false } // true if not from original challan
 });
 
 const returnChallanSchema = new mongoose.Schema({
-  company: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Company',
-    required: true
-  },
-  returnChallanNumber: {
-    type: String,
-    required: true,
-    unique: true
-  },
-  originalChallan: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Challan',
-    required: true
-  },
-  party: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'Party',
-    required: true
-  },
-  returnDate: {
-    type: Date,
-    required: true,
-    default: Date.now
-  },
+  company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
+  returnChallanNumber: { type: String, required: true, unique: true },
+  originalChallan: { type: mongoose.Schema.Types.ObjectId, ref: 'Challan', required: true },
+  party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', required: true },
+  returnDate: { type: Date, default: Date.now },
   items: [returnItemSchema],
-  subtotal: {
-    type: Number,
-    required: true,
-    default: 0
-  },
-  totalGST: {
-    type: Number,
-    default: 0
-  },
-  grandTotal: {
-    type: Number,
-    required: true,
-    default: 0
-  },
-  notes: {
-    type: String
+  subtotal: { type: Number, default: 0 },
+  totalGST: { type: Number, default: 0 },
+  grandTotal: { type: Number, default: 0 },
+  notes: String,
+  returnType: {
+    type: String,
+    enum: ['party_return', 'self_return'],
+    default: 'party_return'
   },
   status: {
     type: String,
-    enum: ['pending', 'approved', 'rejected'],
+    enum: ['pending', 'acknowledged'],
     default: 'pending'
   },
-  createdBy: {
-    type: mongoose.Schema.Types.ObjectId,
-    ref: 'User',
-    required: true
-  }
-}, {
-  timestamps: true
-});
-
-// Index for faster queries
-returnChallanSchema.index({ company: 1, returnChallanNumber: 1 });
-returnChallanSchema.index({ company: 1, originalChallan: 1 });
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
+}, { timestamps: true });
 
 const ReturnChallan = mongoose.model('ReturnChallan', returnChallanSchema);
-
 export default ReturnChallan;
