@@ -216,3 +216,29 @@ export const getMyPermissions = async (req, res, next) => {
     res.json({ success: true, role: member.role, permissions: member.permissions, status: member.status });
   } catch (err) { next(err); }
 };
+
+// @desc  Owner/Admin resets a member's password
+// @route PUT /api/team/:id/reset-password
+export const resetMemberPassword = async (req, res, next) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword) return res.status(400).json({ success: false, message: 'Password required' });
+
+    const member = await TeamMember.findOne({ _id: req.params.id, company: req.user.company })
+      .populate('user');
+    if (!member) return res.status(404).json({ success: false, message: 'Member not found' });
+    if (member.role === 'owner') return res.status(403).json({ success: false, message: 'Cannot change owner password here' });
+
+    const bcrypt = await import('bcryptjs');
+    const salt = await bcrypt.default.genSalt(10);
+    const hashed = await bcrypt.default.hash(newPassword, salt);
+
+    await User.findByIdAndUpdate(member.user._id, { password: hashed });
+
+    // Store plain password in TeamMember so admin can see it
+    member.tempPassword = newPassword;
+    await member.save();
+
+    res.json({ success: true, message: `Password updated for ${member.user.name}` });
+  } catch (err) { next(err); }
+};

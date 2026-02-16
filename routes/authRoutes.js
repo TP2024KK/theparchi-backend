@@ -19,6 +19,5 @@ router.post('/reset-password', resetPassword);
 
 // Protected routes
 router.get('/me', protect, getMe);
-router.post('/change-password', protect, changePassword);
 
 export default router;

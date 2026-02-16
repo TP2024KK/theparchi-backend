@@ -39,6 +39,7 @@ const userSchema = new mongoose.Schema({
     type: Boolean,
     default: true
   },
+
   permissions: [{
     module: {
       type: String,

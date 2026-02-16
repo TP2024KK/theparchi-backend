@@ -144,7 +144,7 @@ export const login = async (req, res, next) => {
           company: {
             id: user.company._id,
             name: user.company.name
-          }
+          },
         }
       }
     });
