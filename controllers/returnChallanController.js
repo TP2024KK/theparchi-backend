@@ -306,3 +306,38 @@ export const getLedger = async (req, res, next) => {
     res.json({ success: true, data: ledger || [], total: ledger.length });
   } catch (err) { next(err); }
 };
+
+// @desc  Get return challans received by this company (party returned goods to us)
+// @route GET /api/return-challans/received
+export const getReceivedReturnChallans = async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+
+    // Find all challans sent BY this company that have party_returns against them
+    const filter = {
+      company: req.user.company,
+      status: { $in: ['returned', 'partially_returned'] }
+    };
+    if (from || to) {
+      filter.challanDate = {};
+      if (from) filter.challanDate.$gte = new Date(from);
+      if (to) filter.challanDate.$lte = new Date(to + 'T23:59:59');
+    }
+
+    // Get all return challans of type party_return for this company's challans
+    const returnFilter = { company: req.user.company, returnType: 'party_return' };
+    if (from || to) {
+      returnFilter.returnDate = {};
+      if (from) returnFilter.returnDate.$gte = new Date(from);
+      if (to) returnFilter.returnDate.$lte = new Date(to + 'T23:59:59');
+    }
+
+    const receivedReturns = await ReturnChallan.find(returnFilter)
+      .populate('party', 'name phone email')
+      .populate('originalChallan', 'challanNumber challanDate')
+      .populate('createdBy', 'name')
+      .sort({ returnDate: -1 });
+
+    res.json({ success: true, data: receivedReturns });
+  } catch (err) { next(err); }
+};

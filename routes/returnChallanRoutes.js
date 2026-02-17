@@ -5,7 +5,8 @@ import {
   getReturnChallan,
   createReturnChallan,
   acceptMargin,
-  getLedger
+  getLedger,
+  getReceivedReturnChallans
 } from '../controllers/returnChallanController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -14,6 +15,7 @@ router.use(protect);
 
 router.get('/accepted-challans', getAcceptedChallans);
 router.get('/ledger', getLedger);
+router.get('/received', getReceivedReturnChallans);
 router.post('/accept-margin', acceptMargin);
 router.route('/').get(getReturnChallans).post(createReturnChallan);
 router.route('/:id').get(getReturnChallan);
