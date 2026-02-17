@@ -21,6 +21,9 @@ const app = express();
 // Security middleware
 app.use(helmet());
 
+// Trust proxy - required for Render.com (fixes express-rate-limit X-Forwarded-For warning)
+app.set('trust proxy', 1);
+
 // CORS - Allow multiple origins
 const allowedOrigins = [
   'http://localhost:5173',
