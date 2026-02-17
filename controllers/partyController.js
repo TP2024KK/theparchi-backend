@@ -34,7 +34,11 @@ export const getParties = async (req, res, next) => {
   try {
     const { type, search, page = 1, limit = 50 } = req.query;
 
-    console.log('getParties - User:', req.user.id, '| Company:', req.user.company);
+    console.log('=== getParties DEBUG ===');
+    console.log('User ID:', req.user.id);
+    console.log('User email:', req.user.email);
+    console.log('User company:', req.user.company);
+    console.log('Company type:', typeof req.user.company);
     const query = { 
       company: req.user.company,
       isActive: true
@@ -62,6 +66,7 @@ export const getParties = async (req, res, next) => {
       Party.countDocuments(query)
     ]);
 
+    console.log('Found', parties.length, 'parties for company:', req.user.company);
     res.status(200).json({
       success: true,
       data: parties,
