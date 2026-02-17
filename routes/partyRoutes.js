@@ -6,7 +6,7 @@ import {
   updateParty,
   deleteParty
 } from '../controllers/partyController.js';
-import { protect, checkPermission } from '../middleware/auth.js';
+import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -14,12 +14,12 @@ const router = express.Router();
 router.use(protect);
 
 router.route('/')
-  .get(checkPermission('parties', 'read'), getParties)
-  .post(checkPermission('parties', 'create'), createParty);
+  .get(getParties)
+  .post(createParty);
 
 router.route('/:id')
-  .get(checkPermission('parties', 'read'), getParty)
-  .put(checkPermission('parties', 'update'), updateParty)
-  .delete(checkPermission('parties', 'delete'), deleteParty);
+  .get(getParty)
+  .put(updateParty)
+  .delete(deleteParty);
 
 export default router;

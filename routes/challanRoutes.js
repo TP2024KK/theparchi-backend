@@ -9,7 +9,7 @@ import {
   sendChallan,
   selfActionChallan
 } from '../controllers/challanController.js';
-import { protect, checkPermission } from '../middleware/auth.js';
+import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -27,12 +27,12 @@ router.post('/:id/self-action', selfActionChallan);
 
 // CRUD routes
 router.route('/')
-  .get(checkPermission('challans', 'read'), getChallans)
-  .post(checkPermission('challans', 'create'), createChallan);
+  .get(getChallans)
+  .post(createChallan);
 
 router.route('/:id')
-  .get(checkPermission('challans', 'read'), getChallan)
-  .put(checkPermission('challans', 'update'), updateChallan)
-  .delete(checkPermission('challans', 'delete'), deleteChallan);
+  .get(getChallan)
+  .put(updateChallan)
+  .delete(deleteChallan);
 
 export default router;
