@@ -22,7 +22,7 @@ export const getReceivedChallans = async (req, res, next) => {
 
     const challans = await Challan.find({
       emailSentTo: { $in: emails },
-      status: 'sent'
+      status: { $in: ['sent', 'accepted', 'self_accepted', 'rejected', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] }
     })
       .populate('company', 'name email phone address gstNumber logo settings')
       .populate('party', 'name email phone address gstNumber')
@@ -113,7 +113,7 @@ export const createReceiverReturnChallan = async (req, res, next) => {
       .populate('company', 'name email');
 
     if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
-    if (challan.partyResponse?.status !== 'accepted') {
+    if (!['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned'].includes(challan.status)) {
       return res.status(400).json({ success: false, message: 'Challan must be accepted before creating return challan' });
     }
 
@@ -255,8 +255,7 @@ export const getSenderCompanies = async (req, res, next) => {
 
     const challans = await Challan.find({
       emailSentTo: { $in: emails },
-      status: 'sent',
-      'partyResponse.status': 'accepted'
+      status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] }
     }).populate('company', 'name email').select('company');
 
     // Unique companies
