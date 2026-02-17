@@ -1,11 +1,12 @@
 import express from 'express';
-import { createChallan, getChallans, getChallan, updateChallan, deleteChallan, getChallanStats, sendChallan, selfActionChallan, sfpChallan, getSFPRecipients } from '../controllers/challanController.js';
+import { createChallan, getChallans, getChallan, updateChallan, deleteChallan, getChallanStats, sendChallan, selfActionChallan, sfpChallan, getSFPRecipients, fixChallanStatuses } from '../controllers/challanController.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
 router.use(protect);
 
 router.get('/stats', getChallanStats);
+router.post('/fix-statuses', fixChallanStatuses);
 router.get('/sfp-recipients', getSFPRecipients);
 router.post('/:id/send', sendChallan);
 router.post('/:id/sfp', sfpChallan);

@@ -358,3 +358,27 @@ export const getChallanStats = async (req, res, next) => {
     res.json({ success: true, data: stats });
   } catch (error) { next(error); }
 };
+
+// @desc  Fix old challan statuses (one-time migration)
+// @route POST /api/challans/fix-statuses
+export const fixChallanStatuses = async (req, res, next) => {
+  try {
+    // Fix: sent + partyResponse.accepted → accepted
+    const r1 = await Challan.updateMany(
+      { status: 'sent', 'partyResponse.status': 'accepted' },
+      { $set: { status: 'accepted' } }
+    );
+    // Fix: sent + partyResponse.rejected → rejected (not returned!)  
+    const r2 = await Challan.updateMany(
+      { status: { $in: ['sent', 'returned'] }, 'partyResponse.status': 'rejected', 'partyResponse.selfAction': { $ne: true } },
+      { $set: { status: 'rejected' } }
+    );
+    // Fix: self accepted
+    const r3 = await Challan.updateMany(
+      { status: 'sent', 'partyResponse.status': 'accepted', 'partyResponse.selfAction': true },
+      { $set: { status: 'self_accepted' } }
+    );
+
+    res.json({ success: true, message: 'Statuses fixed!', fixed: { accepted: r1.modifiedCount, rejected: r2.modifiedCount, selfAccepted: r3.modifiedCount } });
+  } catch (error) { next(error); }
+};

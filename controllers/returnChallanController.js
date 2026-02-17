@@ -8,7 +8,7 @@ export const getAcceptedChallans = async (req, res, next) => {
   try {
     const challans = await Challan.find({
       company: req.user.company,
-      'partyResponse.status': 'accepted'
+status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned'] }
     })
     .populate('party', 'name')
     .select('challanNumber party challanDate items grandTotal')
@@ -71,7 +71,7 @@ export const createReturnChallan = async (req, res, next) => {
         challanCache[item.originalChallan] = await Challan.findOne({
           _id: item.originalChallan,
           company: req.user.company,
-          'partyResponse.status': 'accepted'
+    status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned'] }
         });
       }
       const challan = challanCache[item.originalChallan];
@@ -128,7 +128,7 @@ export const createReturnChallan = async (req, res, next) => {
       createdBy: req.user.id
     });
 
-    // Update returnedQty on each source challan
+    // Update returnedQty on each source challan AND update challan status
     for (const item of items) {
       if (item.originalChallan && item.originalItem) {
         const challan = challanCache[item.originalChallan];
@@ -136,6 +136,24 @@ export const createReturnChallan = async (req, res, next) => {
           const origItem = challan.items.id(item.originalItem);
           if (origItem) {
             origItem.returnedQty = (origItem.returnedQty || 0) + Number(item.quantity);
+            
+            // Recalculate return status
+            const isCreatorReturning = challan.createdBy?.toString() === req.user.id.toString() ||
+              challan.company?.toString() === req.user.company?.toString();
+            
+            const totalQty = challan.items.reduce((sum, i) => sum + i.quantity, 0);
+            const totalReturned = challan.items.reduce((sum, i) => sum + (i.returnedQty || 0), 0);
+            const isFullReturn = totalReturned >= totalQty;
+            
+            // Determine new status based on who is returning
+            if (isCreatorReturning) {
+              // Sender/owner is doing the return = SELF return
+              challan.status = isFullReturn ? 'self_returned' : 'partially_self_returned';
+            } else {
+              // External party is returning
+              challan.status = isFullReturn ? 'returned' : 'partially_returned';
+            }
+            
             await challan.save();
           }
         }
@@ -189,7 +207,7 @@ export const getLedger = async (req, res, next) => {
     const { party, from, to } = req.query;
     const filter = {
       company: req.user.company,
-      'partyResponse.status': 'accepted'
+status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned'] }
     };
     if (party) filter.party = party;
     if (from || to) {

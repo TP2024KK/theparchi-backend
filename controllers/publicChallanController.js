@@ -117,11 +117,11 @@ export const respondToChallan = async (req, res) => {
     };
     challan.partyOTP = undefined; // Clear OTP after use
 
-    // Update challan status if accepted
+    // Update challan main status to match party response
     if (action === 'accepted') {
-      challan.status = 'sent'; // Keep as sent
+      challan.status = 'accepted';
     } else if (action === 'rejected') {
-      challan.status = 'returned';
+      challan.status = 'rejected';
     }
 
     await challan.save();
