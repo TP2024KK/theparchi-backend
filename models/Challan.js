@@ -90,7 +90,19 @@ const challanSchema = new mongoose.Schema({
   },
   status: {
     type: String,
-    enum: ['draft', 'sent', 'returned', 'cancelled'],
+    enum: [
+      'draft',           // Saved, not submitted - fully editable
+      'created',         // Submitted, not sent to party - editable by maker
+      'sent',            // Sent to external party - not editable
+      'rejected',        // Party rejected (never accepted) - editable, can resend
+      'accepted',        // Party accepted
+      'self_accepted',   // Owner/admin accepted own challan
+      'returned',        // Fully returned after acceptance
+      'partially_returned',      // Partially returned after acceptance
+      'self_returned',           // Self returned after self_accepted
+      'partially_self_returned', // Partially self returned
+      'cancelled'
+    ],
     default: 'draft'
   },
   createdBy: {
@@ -98,6 +110,23 @@ const challanSchema = new mongoose.Schema({
     ref: 'User',
     required: true
   },
+  // SFP - Internal workflow
+  sfpStatus: {
+    type: String,
+    enum: ['none', 'pending', 'viewed', 'sent'],
+    default: 'none'
+  },
+  sfpAssignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  sfpTrail: [{
+    action: { type: String, enum: ['created', 'sfp_sent', 'sfp_viewed', 'sent_to_party', 'edited'] },
+    by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    to: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    note: String,
+    at: { type: Date, default: Date.now }
+  }],
+  // Resend tracking (same challan number, updated content)
+  resentCount: { type: Number, default: 0 },
+  lastResentAt: Date,
   returnChallans: [{
     type: mongoose.Schema.Types.ObjectId,
     ref: 'ReturnChallan'

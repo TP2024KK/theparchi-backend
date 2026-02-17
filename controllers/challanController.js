@@ -1,398 +1,346 @@
 import Challan from '../models/Challan.js';
 import Company from '../models/Company.js';
 import Party from '../models/Party.js';
+import User from '../models/User.js';
+import TeamMember from '../models/TeamMember.js';
+import { sendChallanEmail } from '../utils/email.js';
+import { createNotification } from '../utils/notify.js';
+import crypto from 'crypto';
 
-/**
- * @desc    Create new challan
- * @route   POST /api/challans
- * @access  Private
- */
+// Helper: calculate totals from items
+const calcTotals = (items) => {
+  let subtotal = 0, totalGST = 0;
+  const processed = items.map(item => {
+    const amount = item.quantity * item.rate;
+    const gstAmount = (amount * (item.gstRate || 0)) / 100;
+    subtotal += amount;
+    totalGST += gstAmount;
+    return { ...item, amount, gstAmount };
+  });
+  return { items: processed, subtotal, totalGST, grandTotal: subtotal + totalGST };
+};
+
+// Helper: check if user can edit challan
+const canEdit = (challan, userId) => {
+  const editableStatuses = ['draft', 'created', 'rejected'];
+  if (!editableStatuses.includes(challan.status)) return false;
+  return challan.createdBy.toString() === userId.toString() ||
+    challan.sfpAssignedTo?.toString() === userId.toString();
+};
+
+// Helper: get user permissions
+const getUserPerms = async (userId, companyId) => {
+  const company = await Company.findById(companyId);
+  if (company.owner?.toString() === userId.toString()) return { isOwner: true, all: true };
+  const member = await TeamMember.findOne({ user: userId, company: companyId });
+  return member?.permissions || {};
+};
+
+// @desc  Create challan (draft, created, or send directly)
+// @route POST /api/challans
 export const createChallan = async (req, res, next) => {
   try {
-    const { party, challanDate, items, notes } = req.body;
+    const { party, challanDate, items, notes, action = 'draft' } = req.body;
+    // action: 'draft' | 'save' (created) | 'send' (created+sent)
 
-    // Get company and generate challan number
+    const perms = await getUserPerms(req.user.id, req.user.company);
+    if (action === 'send' && !perms.all && !perms.canSendChallan) {
+      return res.status(403).json({ success: false, message: 'No permission to send challans' });
+    }
+
     const company = await Company.findById(req.user.company);
     const challanNumber = `${company.settings.challanPrefix}-${company.settings.nextChallanNumber}`;
+    const { items: processedItems, subtotal, totalGST, grandTotal } = calcTotals(items);
 
-    // Calculate totals
-    let subtotal = 0;
-    let totalGST = 0;
+    let status = action === 'draft' ? 'draft' : action === 'send' ? 'sent' : 'created';
 
-    const processedItems = items.map(item => {
-      const amount = item.quantity * item.rate;
-      const gstAmount = (amount * item.gstRate) / 100;
-      
-      subtotal += amount;
-      totalGST += gstAmount;
-
-      return {
-        ...item,
-        amount,
-        gstAmount
-      };
-    });
-
-    const grandTotal = subtotal + totalGST;
-
-    // Create challan
-    const challan = await Challan.create({
+    const challanData = {
       company: req.user.company,
       challanNumber,
       party,
       challanDate: challanDate || Date.now(),
       items: processedItems,
-      subtotal,
-      totalGST,
-      grandTotal,
-      notes,
+      subtotal, totalGST, grandTotal, notes,
       createdBy: req.user.id,
-      status: 'draft'
-    });
+      status,
+      sfpTrail: [{ action: 'created', by: req.user.id, at: new Date() }]
+    };
 
-    // Increment challan number in company settings
+    // If sending, generate token and send email
+    if (action === 'send') {
+      challanData.publicToken = crypto.randomBytes(32).toString('hex');
+      challanData.emailSentAt = new Date();
+    }
+
+    const challan = await Challan.create(challanData);
     company.settings.nextChallanNumber += 1;
-    await company.save();
+    await Company.updateOne({ _id: company._id }, { 'settings.nextChallanNumber': company.settings.nextChallanNumber });
 
-    // Populate party details
     await challan.populate('party');
     await challan.populate('createdBy', 'name email');
 
-    res.status(201).json({
-      success: true,
-      message: 'Challan created successfully',
-      data: challan
-    });
-  } catch (error) {
-    next(error);
-  }
+    // Send email if action is send
+    if (action === 'send') {
+      const partyDoc = await Party.findById(party);
+      if (partyDoc?.email) {
+        challan.emailSentTo = partyDoc.email;
+        await Challan.updateOne({ _id: challan._id }, { emailSentTo: partyDoc.email });
+        sendChallanEmail(challan, partyDoc, company, req.user).catch(e => console.error('Email failed:', e));
+      }
+    }
+
+    res.status(201).json({ success: true, message: `Challan ${status}!`, data: challan });
+  } catch (error) { next(error); }
 };
 
-/**
- * @desc    Get all challans for company
- * @route   GET /api/challans
- * @access  Private
- */
+// @desc  Get all challans
+// @route GET /api/challans
 export const getChallans = async (req, res, next) => {
   try {
-    const { status, party, startDate, endDate, page = 1, limit = 20 } = req.query;
-
-    // Build query
-    console.log('=== getChallans DEBUG ===');
-    console.log('User ID:', req.user.id);
-    console.log('User email:', req.user.email);
-    console.log('User company:', req.user.company);
-    console.log('Company type:', typeof req.user.company);
+    const { status, party, startDate, endDate, page = 1, limit = 50 } = req.query;
     const query = { company: req.user.company };
-
-    if (status) {
-      query.status = status;
-    }
-
-    if (party) {
-      query.party = party;
-    }
-
+    if (status) query.status = status;
+    if (party) query.party = party;
     if (startDate || endDate) {
       query.challanDate = {};
       if (startDate) query.challanDate.$gte = new Date(startDate);
       if (endDate) query.challanDate.$lte = new Date(endDate);
     }
-
-    // Execute query with pagination
     const skip = (parseInt(page) - 1) * parseInt(limit);
-
     const [challans, total] = await Promise.all([
       Challan.find(query)
-        .populate('party', 'name phone gstNumber')
+        .populate('party', 'name email phone')
         .populate('createdBy', 'name')
-        .sort({ challanDate: -1 })
+        .populate('sfpAssignedTo', 'name')
+        .sort({ createdAt: -1 })
         .limit(parseInt(limit))
         .skip(skip),
       Challan.countDocuments(query)
     ]);
-
-    res.status(200).json({
-      success: true,
-      data: challans,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / parseInt(limit))
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
+    res.json({ success: true, data: challans, pagination: { page: parseInt(page), limit: parseInt(limit), total } });
+  } catch (error) { next(error); }
 };
 
-/**
- * @desc    Get single challan
- * @route   GET /api/challans/:id
- * @access  Private
- */
+// @desc  Get single challan
+// @route GET /api/challans/:id
 export const getChallan = async (req, res, next) => {
   try {
-    const challan = await Challan.findOne({
-      _id: req.params.id,
-      company: req.user.company
-    })
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company })
       .populate('party')
       .populate('createdBy', 'name email')
-      .populate('returnChallans');
-
-    if (!challan) {
-      return res.status(404).json({
-        success: false,
-        message: 'Challan not found'
-      });
-    }
-
-    res.status(200).json({
-      success: true,
-      data: challan
-    });
-  } catch (error) {
-    next(error);
-  }
+      .populate('sfpAssignedTo', 'name email')
+      .populate('sfpTrail.by', 'name')
+      .populate('sfpTrail.to', 'name');
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
+    res.json({ success: true, data: challan });
+  } catch (error) { next(error); }
 };
 
-/**
- * @desc    Update challan
- * @route   PUT /api/challans/:id
- * @access  Private
- */
+// @desc  Update challan (only draft/created/rejected)
+// @route PUT /api/challans/:id
 export const updateChallan = async (req, res, next) => {
   try {
-    let challan = await Challan.findOne({
-      _id: req.params.id,
-      company: req.user.company
-    });
-
-    if (!challan) {
-      return res.status(404).json({
-        success: false,
-        message: 'Challan not found'
-      });
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company });
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
+    if (!canEdit(challan, req.user.id)) {
+      return res.status(403).json({ success: false, message: `Cannot edit challan with status: ${challan.status}` });
     }
 
-    // Don't allow updates to completed/cancelled challans
-    if (challan.status === 'cancelled') {
-      return res.status(400).json({
-        success: false,
-        message: 'Cannot update cancelled challan'
-      });
+    const { party, challanDate, items, notes, action = 'save' } = req.body;
+    const { items: processedItems, subtotal, totalGST, grandTotal } = calcTotals(items);
+
+    const perms = await getUserPerms(req.user.id, req.user.company);
+    if (action === 'send' && !perms.all && !perms.canSendChallan) {
+      return res.status(403).json({ success: false, message: 'No permission to send challans' });
     }
 
-    const { party, challanDate, items, notes, status } = req.body;
+    let newStatus = action === 'draft' ? 'draft' : action === 'send' ? 'sent' : 'created';
 
-    // Recalculate totals if items are updated
-    if (items) {
-      let subtotal = 0;
-      let totalGST = 0;
+    // If rejected and resending - same challan number
+    const isResend = challan.status === 'rejected' && action === 'send';
 
-      const processedItems = items.map(item => {
-        const amount = item.quantity * item.rate;
-        const gstAmount = (amount * item.gstRate) / 100;
-        
-        subtotal += amount;
-        totalGST += gstAmount;
+    const updateData = {
+      party, challanDate, notes,
+      items: processedItems, subtotal, totalGST, grandTotal,
+      status: newStatus,
+      $push: { sfpTrail: { action: isResend ? 'sent_to_party' : 'edited', by: req.user.id, at: new Date() } }
+    };
 
-        return {
-          ...item,
-          amount,
-          gstAmount
-        };
-      });
-
-      challan.items = processedItems;
-      challan.subtotal = subtotal;
-      challan.totalGST = totalGST;
-      challan.grandTotal = subtotal + totalGST;
+    if (isResend) {
+      updateData.resentCount = (challan.resentCount || 0) + 1;
+      updateData.lastResentAt = new Date();
+      updateData.publicToken = crypto.randomBytes(32).toString('hex');
+      updateData.emailSentAt = new Date();
+      // Clear previous rejection
+      updateData['partyResponse.status'] = 'pending';
+      updateData['partyResponse.remarks'] = '';
     }
 
-    if (party) challan.party = party;
-    if (challanDate) challan.challanDate = challanDate;
-    if (notes !== undefined) challan.notes = notes;
-    if (status) challan.status = status;
-
-    await challan.save();
-    await challan.populate('party');
-    await challan.populate('createdBy', 'name email');
-
-    res.status(200).json({
-      success: true,
-      message: 'Challan updated successfully',
-      data: challan
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Delete challan
- * @route   DELETE /api/challans/:id
- * @access  Private
- */
-export const deleteChallan = async (req, res, next) => {
-  try {
-    const challan = await Challan.findOne({
-      _id: req.params.id,
-      company: req.user.company
-    });
-
-    if (!challan) {
-      return res.status(404).json({
-        success: false,
-        message: 'Challan not found'
-      });
+    if (action === 'send' && !isResend) {
+      updateData.publicToken = crypto.randomBytes(32).toString('hex');
+      updateData.emailSentAt = new Date();
     }
 
-    // Only allow deletion of draft challans
-    if (challan.status !== 'draft') {
-      return res.status(400).json({
-        success: false,
-        message: 'Only draft challans can be deleted'
-      });
-    }
+    await Challan.updateOne({ _id: challan._id }, updateData);
+    const updated = await Challan.findById(challan._id).populate('party').populate('createdBy', 'name');
 
-    await challan.deleteOne();
-
-    res.status(200).json({
-      success: true,
-      message: 'Challan deleted successfully'
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * @desc    Get challan statistics
- * @route   GET /api/challans/stats
- * @access  Private
- */
-export const getChallanStats = async (req, res, next) => {
-  try {
-    const stats = await Challan.aggregate([
-      { $match: { company: req.user.company } },
-      {
-        $group: {
-          _id: '$status',
-          count: { $sum: 1 },
-          totalAmount: { $sum: '$grandTotal' }
-        }
+    // Send email if sending
+    if (action === 'send') {
+      const company = await Company.findById(req.user.company);
+      const partyDoc = await Party.findById(party || challan.party);
+      if (partyDoc?.email) {
+        await Challan.updateOne({ _id: challan._id }, { emailSentTo: partyDoc.email });
+        sendChallanEmail(updated, partyDoc, company, req.user).catch(e => console.error('Email failed:', e));
       }
-    ]);
+    }
 
-    const total = await Challan.countDocuments({ company: req.user.company });
-
-    res.status(200).json({
-      success: true,
-      data: {
-        total,
-        byStatus: stats
-      }
-    });
-  } catch (error) {
-    next(error);
-  }
+    res.json({ success: true, message: `Challan ${isResend ? 'resent' : newStatus}!`, data: updated });
+  } catch (error) { next(error); }
 };
 
-// @desc  Send challan to party via email
+// @desc  Send challan to party (from created status)
 // @route POST /api/challans/:id/send
 export const sendChallan = async (req, res, next) => {
   try {
-    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company })
-      .populate('party', 'name email phone')
-      .populate('company', 'name email');
-
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company }).populate('party');
     if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
-
-    const party = challan.party;
-    if (!party.email) {
-      return res.status(400).json({ success: false, message: 'Party does not have an email address. Please add email to party first.' });
+    if (!['draft', 'created', 'rejected'].includes(challan.status)) {
+      return res.status(400).json({ success: false, message: 'Challan cannot be sent in current status' });
     }
 
-    // Generate unique public token
-    const crypto = await import('crypto');
-    const publicToken = crypto.default.randomBytes(32).toString('hex');
+    const perms = await getUserPerms(req.user.id, req.user.company);
+    if (!perms.all && !perms.canSendChallan) {
+      return res.status(403).json({ success: false, message: 'No permission to send challans' });
+    }
 
-    // Update challan
-    challan.publicToken = publicToken;
-    challan.status = 'sent';
-    challan.emailSentAt = new Date();
-    challan.emailSentTo = party.email;
-    challan.partyResponse = { status: 'pending' };
-    await challan.save();
+    const isResend = challan.status === 'rejected';
+    const token = crypto.randomBytes(32).toString('hex');
 
-    // Build public link
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    const publicLink = `${frontendUrl}/challan/view/${publicToken}`;
-
-    // Send email
-    const { sendChallanEmail } = await import('../utils/email.js');
-    await sendChallanEmail(
-      party.email,
-      party.name,
-      challan.company.name || req.user.company,
-      challan.challanNumber,
-      new Date(challan.challanDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
-      challan.grandTotal,
-      publicLink,
-      challan.items
-    );
-
-    res.json({
-      success: true,
-      message: `Challan sent to ${party.email} successfully!`,
-      data: { publicLink, emailSentTo: party.email }
+    await Challan.updateOne({ _id: challan._id }, {
+      status: 'sent',
+      publicToken: token,
+      emailSentAt: new Date(),
+      'partyResponse.status': 'pending',
+      ...(isResend && { resentCount: (challan.resentCount || 0) + 1, lastResentAt: new Date() }),
+      $push: { sfpTrail: { action: 'sent_to_party', by: req.user.id, at: new Date() } }
     });
-  } catch (err) {
-    console.error('Send challan error:', err);
-    next(err);
-  }
+
+    const company = await Company.findById(req.user.company);
+    if (challan.party?.email) {
+      const updated = await Challan.findById(challan._id).populate('party');
+      await Challan.updateOne({ _id: challan._id }, { emailSentTo: challan.party.email });
+      sendChallanEmail(updated, challan.party, company, req.user).catch(e => console.error('Email error:', e));
+    }
+
+    res.json({ success: true, message: isResend ? 'Challan resent successfully!' : 'Challan sent successfully!' });
+  } catch (error) { next(error); }
 };
 
-// @desc  Self Accept or Reject challan (by sender for their own records)
+// @desc  SFP - Send challan internally for processing
+// @route POST /api/challans/:id/sfp
+export const sfpChallan = async (req, res, next) => {
+  try {
+    const { toUserId, note } = req.body;
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company });
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
+    if (!['draft', 'created'].includes(challan.status)) {
+      return res.status(400).json({ success: false, message: 'Can only SFP draft or created challans' });
+    }
+
+    const perms = await getUserPerms(req.user.id, req.user.company);
+    if (!perms.all && !perms.canSFP) {
+      return res.status(403).json({ success: false, message: 'No SFP permission' });
+    }
+
+    await Challan.updateOne({ _id: challan._id }, {
+      sfpStatus: 'pending',
+      sfpAssignedTo: toUserId,
+      $push: { sfpTrail: { action: 'sfp_sent', by: req.user.id, to: toUserId, note, at: new Date() } }
+    });
+
+    // Notify recipient
+    const fromUser = await User.findById(req.user.id);
+    await createNotification({
+      company: req.user.company,
+      type: 'challan_received',
+      title: '📋 Challan assigned to you for processing',
+      message: `${fromUser?.name} sent Challan ${challan.challanNumber} to you for processing${note ? '. Note: ' + note : ''}`,
+      link: '/challans',
+      relatedChallan: challan._id,
+      fromCompany: fromUser?.name
+    });
+
+    const toUser = await User.findById(toUserId);
+    res.json({ success: true, message: `Challan sent to ${toUser?.name} for processing!` });
+  } catch (error) { next(error); }
+};
+
+// @desc  Get SFP recipients
+// @route GET /api/challans/sfp-recipients
+export const getSFPRecipients = async (req, res, next) => {
+  try {
+    const members = await TeamMember.find({
+      company: req.user.company,
+      status: 'active',
+      user: { $ne: req.user.id },
+      $or: [
+        { 'permissions.canSendChallan': true },
+        { 'permissions.canSFP': true },
+        { role: { $in: ['owner', 'admin', 'manager'] } }
+      ]
+    }).populate('user', 'name email');
+    res.json({ success: true, data: members });
+  } catch (error) { next(error); }
+};
+
+// @desc  Self accept/reject challan
 // @route POST /api/challans/:id/self-action
 export const selfActionChallan = async (req, res, next) => {
   try {
     const { action, remarks } = req.body;
-
-    if (!['accepted', 'rejected'].includes(action)) {
-      return res.status(400).json({ success: false, message: 'Action must be accepted or rejected' });
-    }
-
     const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company });
     if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
 
-    if (challan.status !== 'sent') {
-      return res.status(400).json({ success: false, message: 'Only sent challans can be self-actioned' });
-    }
+    let newStatus;
+    if (action === 'accept') newStatus = 'self_accepted';
+    else if (action === 'reject') newStatus = 'rejected';
+    else return res.status(400).json({ success: false, message: 'Invalid action' });
 
-    if (challan.partyResponse?.status !== 'pending') {
-      return res.status(400).json({ success: false, message: `Challan already ${challan.partyResponse?.status}` });
-    }
-
-    challan.partyResponse = {
-      status: action,
-      respondedAt: new Date(),
-      remarks: remarks || '',
-      selfAction: true,
-      actionBy: req.user.id
-    };
-
-    await challan.save();
-
-    res.json({
-      success: true,
-      message: `Challan self-${action} successfully!`,
-      data: challan
+    await Challan.updateOne({ _id: challan._id }, {
+      status: newStatus,
+      'partyResponse.status': action === 'accept' ? 'accepted' : 'rejected',
+      'partyResponse.respondedAt': new Date(),
+      'partyResponse.remarks': remarks || '',
+      'partyResponse.selfAction': true,
+      'partyResponse.actionBy': req.user.id
     });
-  } catch (err) {
-    next(err);
-  }
+
+    res.json({ success: true, message: `Challan ${action}ed!` });
+  } catch (error) { next(error); }
+};
+
+// @desc  Delete challan (only draft/created)
+// @route DELETE /api/challans/:id
+export const deleteChallan = async (req, res, next) => {
+  try {
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company });
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
+    if (!['draft', 'created'].includes(challan.status)) {
+      return res.status(400).json({ success: false, message: 'Can only delete draft or created challans' });
+    }
+    await challan.deleteOne();
+    res.json({ success: true, message: 'Challan deleted' });
+  } catch (error) { next(error); }
+};
+
+// @desc  Get challan stats
+// @route GET /api/challans/stats
+export const getChallanStats = async (req, res, next) => {
+  try {
+    const stats = await Challan.aggregate([
+      { $match: { company: req.user.company } },
+      { $group: { _id: '$status', count: { $sum: 1 }, total: { $sum: '$grandTotal' } } }
+    ]);
+    res.json({ success: true, data: stats });
+  } catch (error) { next(error); }
 };
