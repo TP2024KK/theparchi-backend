@@ -34,6 +34,7 @@ export const getParties = async (req, res, next) => {
   try {
     const { type, search, page = 1, limit = 50 } = req.query;
 
+    console.log('getParties - User:', req.user.id, '| Company:', req.user.company);
     const query = { 
       company: req.user.company,
       isActive: true

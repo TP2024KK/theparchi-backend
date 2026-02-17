@@ -78,6 +78,7 @@ export const getChallans = async (req, res, next) => {
     const { status, party, startDate, endDate, page = 1, limit = 20 } = req.query;
 
     // Build query
+    console.log('getChallans - User:', req.user.id, '| Company:', req.user.company);
     const query = { company: req.user.company };
 
     if (status) {
