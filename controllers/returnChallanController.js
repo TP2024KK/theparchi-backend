@@ -205,16 +205,23 @@ export const acceptMargin = async (req, res, next) => {
 export const getLedger = async (req, res, next) => {
   try {
     const { party, from, to } = req.query;
+    const { party, from, to, status } = req.query;
+
+    // Base filter - ALL accepted/returned challans (never exclude from ledger)
     const filter = {
       company: req.user.company,
-status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned'] }
+      status: { $in: ['accepted', 'self_accepted', 'returned', 'self_returned', 'partially_returned', 'partially_self_returned'] }
     };
+
+    // Optional filters
     if (party) filter.party = party;
     if (from || to) {
       filter.challanDate = {};
       if (from) filter.challanDate.$gte = new Date(from);
       if (to) filter.challanDate.$lte = new Date(to + 'T23:59:59');
     }
+    // Status filter for ledger rows (pending balance, fully returned, margin accepted)
+    // Applied after building ledger rows below
 
     const challans = await Challan.find(filter)
       .populate('party', 'name phone')
@@ -256,12 +263,26 @@ status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_se
         const totalReturned = item.returnedQty || 0;
         const balance = item.quantity - totalReturned;
 
+        const isMarginAccepted = item.marginAccepted?.accepted === true;
+        const isFullyReturned = balance === 0;
+        
+        // Ledger status for filtering
+        let ledgerStatus;
+        if (isMarginAccepted) ledgerStatus = 'margin_accepted';
+        else if (isFullyReturned) ledgerStatus = 'fully_returned';
+        else if (totalReturned > 0) ledgerStatus = 'partially_returned';
+        else ledgerStatus = 'pending'; // sent, accepted, no return yet
+
+        // Apply status filter if requested
+        if (status && status !== 'all' && ledgerStatus !== status) continue;
+
         ledger.push({
           // Sent info
           challanId: challan._id,
           itemId: item._id,
           challanNumber: challan.challanNumber,
           challanDate: challan.challanDate,
+          challanStatus: challan.status,
           party: challan.party,
           partyResponse: challan.partyResponse,
           // Item info
@@ -270,13 +291,15 @@ status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_se
           unit: item.unit,
           sentQty: item.quantity,
           rate: item.rate,
+          amount: item.amount,
           // Return info
           returns: itemReturns,
           totalReturnedQty: totalReturned,
           balanceQty: balance,
           // Margin
           marginAccepted: item.marginAccepted || null,
-          isClosed: balance === 0 || (item.marginAccepted?.accepted === true)
+          isClosed: isFullyReturned || isMarginAccepted,
+          ledgerStatus, // 'pending' | 'partially_returned' | 'fully_returned' | 'margin_accepted'
         });
       }
     }
