@@ -279,6 +279,7 @@ export const sfpChallan = async (req, res, next) => {
 // @route GET /api/challans/sfp-recipients
 export const getSFPRecipients = async (req, res, next) => {
   try {
+    // Get team members who can receive SFP
     const members = await TeamMember.find({
       company: req.user.company,
       status: 'active',
@@ -289,6 +290,19 @@ export const getSFPRecipients = async (req, res, next) => {
         { role: { $in: ['owner', 'admin', 'manager'] } }
       ]
     }).populate('user', 'name email');
+
+    // Also include company owner if they are not already in the list
+    const company = await Company.findById(req.user.company);
+    if (company.owner && company.owner.toString() !== req.user.id.toString()) {
+      const ownerInList = members.some(m => m.user._id.toString() === company.owner.toString());
+      if (!ownerInList) {
+        const ownerUser = await User.findById(company.owner).select('name email');
+        if (ownerUser) {
+          members.unshift({ _id: company.owner, user: ownerUser, role: 'owner', permissions: { canSendChallan: true, canSFP: true } });
+        }
+      }
+    }
+
     res.json({ success: true, data: members });
   } catch (error) { next(error); }
 };
