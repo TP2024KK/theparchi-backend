@@ -380,22 +380,28 @@ export const getReceiverReturnsSent = async (req, res, next) => {
     const myUser = await User.findById(req.user.id);
     const emails = [myCompany?.email, myUser?.email].filter(Boolean);
 
-    // Returns created by this user (receiver) stored under the sender's company
-    // They are identified by createdBy = req.user.id
-    const filter = {
-      createdBy: req.user.id,
-      returnType: 'party_return'
-    };
-    if (from || to) {
-      filter.returnDate = {};
-      if (from) filter.returnDate.$gte = new Date(from);
-      if (to) filter.returnDate.$lte = new Date(to + 'T23:59:59');
-    }
+    // Step 1: Find challans that were RECEIVED by this user (sent TO their email)
+    const receivedChallans = await Challan.find({
+      emailSentTo: { $in: emails }
+    }).select('_id');
+    const receivedChallanIds = receivedChallans.map(c => c._id.toString());
 
-    const returns = await ReturnChallan.find(filter)
+    // Step 2: Find return challans whose originalChallan is in that received list
+    // This ensures we only show returns against challans received, not sent
+    const allMyReturns = await ReturnChallan.find({
+      createdBy: req.user.id,
+    }).populate('originalChallan', 'challanNumber challanDate emailSentTo')
       .populate('party', 'name phone email')
-      .populate('originalChallan', 'challanNumber challanDate')
       .sort({ returnDate: -1 });
+
+    // Filter: only keep returns whose original challan was received by this user
+    let returns = allMyReturns.filter(rc => {
+      const origId = rc.originalChallan?._id?.toString();
+      return origId && receivedChallanIds.includes(origId);
+    });
+
+    if (from) returns = returns.filter(rc => new Date(rc.returnDate) >= new Date(from));
+    if (to) returns = returns.filter(rc => new Date(rc.returnDate) <= new Date(to + 'T23:59:59'));
 
     res.json({ success: true, data: returns });
   } catch (err) { next(err); }
@@ -429,11 +435,14 @@ export const getReceiverLedger = async (req, res, next) => {
 
     if (!challans.length) return res.json({ success: true, data: [], total: 0 });
 
-    // Get all returns created by this user
-    const allReturns = await ReturnChallan.find({
+    // Get all returns created by this user against RECEIVED challans only
+    const receivedChallanIds = new Set(challans.map(c => c._id.toString()));
+    const allReturnsRaw = await ReturnChallan.find({
       createdBy: req.user.id,
-      returnType: 'party_return'
     }).sort({ returnDate: 1 });
+    const allReturns = allReturnsRaw.filter(rc =>
+      rc.originalChallan && receivedChallanIds.has(rc.originalChallan.toString())
+    );
 
     const ledger = [];
     for (const challan of challans) {
