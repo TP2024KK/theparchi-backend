@@ -18,12 +18,12 @@ status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_se
   } catch (err) { next(err); }
 };
 
-// @desc  Get all return challans
+// @desc  Get all return challans SENT by this company (self_return type)
 // @route GET /api/return-challans
 export const getReturnChallans = async (req, res, next) => {
   try {
     const { party, from, to } = req.query;
-    const filter = { company: req.user.company };
+    const filter = { company: req.user.company, returnType: 'self_return' }; // Only self returns
     if (party) filter.party = party;
     if (from || to) {
       filter.returnDate = {};
@@ -124,7 +124,7 @@ export const createReturnChallan = async (req, res, next) => {
       subtotal, totalGST,
       grandTotal: subtotal + totalGST,
       notes,
-      returnType: returnType || 'party_return',
+      returnType: 'self_return',  // Sender creating return = always self_return
       createdBy: req.user.id
     });
 
@@ -307,25 +307,18 @@ export const getLedger = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
-// @desc  Get return challans received by this company (party returned goods to us)
+// @desc  Get return challans received by this company (party returned goods to sender)
 // @route GET /api/return-challans/received
+// These are ReturnChallans stored under sender's company with returnType='party_return'
 export const getReceivedReturnChallans = async (req, res, next) => {
   try {
     const { from, to } = req.query;
 
-    // Find all challans sent BY this company that have party_returns against them
-    const filter = {
+    const returnFilter = {
       company: req.user.company,
-      status: { $in: ['returned', 'partially_returned'] }
+      // Both self_return (Kundan recorded it himself) and party_return (receiver created it)
+      // All goods that came BACK to Kundan against his sent challans
     };
-    if (from || to) {
-      filter.challanDate = {};
-      if (from) filter.challanDate.$gte = new Date(from);
-      if (to) filter.challanDate.$lte = new Date(to + 'T23:59:59');
-    }
-
-    // Get all return challans of type party_return for this company's challans
-    const returnFilter = { company: req.user.company, returnType: 'party_return' };
     if (from || to) {
       returnFilter.returnDate = {};
       if (from) returnFilter.returnDate.$gte = new Date(from);

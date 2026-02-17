@@ -370,3 +370,118 @@ export const createMultiChallanReturn = async (req, res, next) => {
     });
   } catch (err) { next(err); }
 };
+
+// @desc  Get return challans sent by receiver (to their senders) - receiver panel
+// @route GET /api/received-challans/returns-sent
+export const getReceiverReturnsSent = async (req, res, next) => {
+  try {
+    const { from, to } = req.query;
+    const myCompany = await Company.findById(req.user.company);
+    const myUser = await User.findById(req.user.id);
+    const emails = [myCompany?.email, myUser?.email].filter(Boolean);
+
+    // Returns created by this user (receiver) stored under the sender's company
+    // They are identified by createdBy = req.user.id
+    const filter = {
+      createdBy: req.user.id,
+      returnType: 'party_return'
+    };
+    if (from || to) {
+      filter.returnDate = {};
+      if (from) filter.returnDate.$gte = new Date(from);
+      if (to) filter.returnDate.$lte = new Date(to + 'T23:59:59');
+    }
+
+    const returns = await ReturnChallan.find(filter)
+      .populate('party', 'name phone email')
+      .populate('originalChallan', 'challanNumber challanDate')
+      .sort({ returnDate: -1 });
+
+    res.json({ success: true, data: returns });
+  } catch (err) { next(err); }
+};
+
+// @desc  Get receiver ledger - items received vs returned
+// @route GET /api/received-challans/ledger
+export const getReceiverLedger = async (req, res, next) => {
+  try {
+    const { senderCompany, from, to, status } = req.query;
+    const myCompany = await Company.findById(req.user.company);
+    const myUser = await User.findById(req.user.id);
+    const emails = [myCompany?.email, myUser?.email].filter(Boolean);
+
+    // Find all challans received by this user
+    const challanFilter = {
+      emailSentTo: { $in: emails },
+      status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] }
+    };
+    if (senderCompany) challanFilter.company = senderCompany;
+    if (from || to) {
+      challanFilter.challanDate = {};
+      if (from) challanFilter.challanDate.$gte = new Date(from);
+      if (to) challanFilter.challanDate.$lte = new Date(to + 'T23:59:59');
+    }
+
+    const challans = await Challan.find(challanFilter)
+      .populate('company', 'name')
+      .populate('party', 'name')
+      .sort({ challanDate: -1 });
+
+    if (!challans.length) return res.json({ success: true, data: [], total: 0 });
+
+    // Get all returns created by this user
+    const allReturns = await ReturnChallan.find({
+      createdBy: req.user.id,
+      returnType: 'party_return'
+    }).sort({ returnDate: 1 });
+
+    const ledger = [];
+    for (const challan of challans) {
+      for (const item of challan.items) {
+        const itemReturns = [];
+        for (const rc of allReturns) {
+          const returnedItem = rc.items.find(ri =>
+            ri.originalItem?.toString() === item._id.toString()
+          );
+          if (returnedItem) {
+            itemReturns.push({
+              returnChallanNumber: rc.returnChallanNumber,
+              returnDate: rc.returnDate,
+              returnQty: returnedItem.quantity,
+            });
+          }
+        }
+
+        const totalReturned = item.returnedQty || 0;
+        const balance = item.quantity - totalReturned;
+        const isFullyReturned = balance === 0;
+        let ledgerStatus;
+        if (isFullyReturned) ledgerStatus = 'fully_returned';
+        else if (totalReturned > 0) ledgerStatus = 'partially_returned';
+        else ledgerStatus = 'pending';
+
+        if (status && status !== 'all' && ledgerStatus !== status) continue;
+
+        ledger.push({
+          challanId: challan._id,
+          itemId: item._id,
+          challanNumber: challan.challanNumber,
+          challanDate: challan.challanDate,
+          senderCompany: challan.company,
+          itemName: item.itemName,
+          hsn: item.hsn || '',
+          unit: item.unit,
+          receivedQty: item.quantity,
+          rate: item.rate,
+          returns: itemReturns,
+          totalReturnedQty: totalReturned,
+          balanceQty: balance,
+          isClosed: isFullyReturned,
+          ledgerStatus,
+        });
+      }
+    }
+
+    res.json({ success: true, data: ledger, total: ledger.length });
+  } catch (err) { next(err); }
+};
