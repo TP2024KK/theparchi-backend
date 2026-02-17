@@ -204,7 +204,6 @@ export const acceptMargin = async (req, res, next) => {
 // @route GET /api/return-challans/ledger
 export const getLedger = async (req, res, next) => {
   try {
-    const { party, from, to } = req.query;
     const { party, from, to, status } = req.query;
 
     // Base filter - ALL accepted/returned challans (never exclude from ledger)
