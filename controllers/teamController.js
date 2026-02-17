@@ -44,12 +44,16 @@ export const addTeamMember = async (req, res, next) => {
     } else {
       // Create new user account
       // Don't pre-hash - User model pre-save hook handles hashing automatically
+      const plainPassword = tempPassword || 'Temp@1234';
+      console.log('Creating team member:', email, '| Password length:', plainPassword.length);
       user = await User.create({
-        name, email: email.toLowerCase(), phone,
-        password: tempPassword || 'Temp@1234',
-        company: req.user.company,
-        isVerified: true
+        name,
+        email: email.toLowerCase(),
+        phone,
+        password: plainPassword,
+        company: req.user.company
       });
+      console.log('Team member created successfully. User ID:', user._id);
     }
 
     // Get default permissions for role
@@ -228,9 +232,11 @@ export const resetMemberPassword = async (req, res, next) => {
     if (member.role === 'owner') return res.status(403).json({ success: false, message: 'Cannot change owner password here' });
 
     // Use findById + save() so pre-save hook hashes the password
+    console.log('Resetting password for user:', member.user._id, '| New password length:', newPassword.length);
     const userToUpdate = await User.findById(member.user._id).select('+password');
     userToUpdate.password = newPassword;
     await userToUpdate.save();
+    console.log('Password reset complete for:', member.user.email);
 
     // Store plain password in TeamMember so admin can see it
     member.tempPassword = newPassword;
