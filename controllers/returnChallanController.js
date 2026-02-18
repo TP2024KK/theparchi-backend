@@ -334,3 +334,87 @@ export const getReceivedReturnChallans = async (req, res, next) => {
     res.json({ success: true, data: receivedReturns });
   } catch (err) { next(err); }
 };
+
+// @desc Accept a return challan (party_return only)
+// @route POST /api/return-challans/:id/accept
+export const acceptReturnChallan = async (req, res, next) => {
+  try {
+    const { remarks } = req.body;
+    const returnChallan = await ReturnChallan.findById(req.params.id);
+    
+    if (!returnChallan) {
+      return res.status(404).json({ success: false, message: 'Return challan not found' });
+    }
+
+    // Only party_return can be accepted/rejected
+    if (returnChallan.returnType !== 'party_return') {
+      return res.status(400).json({ success: false, message: 'Only party returns can be accepted' });
+    }
+
+    // Check if this return belongs to user's company
+    if (returnChallan.company.toString() !== req.user.company.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    returnChallan.senderResponse = {
+      status: 'accepted',
+      respondedAt: new Date(),
+      respondedBy: req.user.id,
+      remarks: remarks || ''
+    };
+
+    await returnChallan.save();
+
+    res.json({ 
+      success: true, 
+      message: 'Return challan accepted',
+      data: returnChallan 
+    });
+  } catch (err) {
+    next(err);
+  }
+};
+
+// @desc Reject a return challan (party_return only)
+// @route POST /api/return-challans/:id/reject
+export const rejectReturnChallan = async (req, res, next) => {
+  try {
+    const { remarks } = req.body;
+    const returnChallan = await ReturnChallan.findById(req.params.id);
+    
+    if (!returnChallan) {
+      return res.status(404).json({ success: false, message: 'Return challan not found' });
+    }
+
+    // Only party_return can be accepted/rejected
+    if (returnChallan.returnType !== 'party_return') {
+      return res.status(400).json({ success: false, message: 'Only party returns can be rejected' });
+    }
+
+    // Check if this return belongs to user's company
+    if (returnChallan.company.toString() !== req.user.company.toString()) {
+      return res.status(403).json({ success: false, message: 'Not authorized' });
+    }
+
+    if (!remarks) {
+      return res.status(400).json({ success: false, message: 'Remarks required for rejection' });
+    }
+
+    returnChallan.senderResponse = {
+      status: 'rejected',
+      respondedAt: new Date(),
+      respondedBy: req.user.id,
+      remarks
+    };
+
+    await returnChallan.save();
+
+    res.json({ 
+      success: true, 
+      message: 'Return challan rejected',
+      data: returnChallan 
+    });
+  } catch (err) {
+    next(err);
+  }
+};

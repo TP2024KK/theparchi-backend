@@ -36,7 +36,13 @@ const returnChallanSchema = new mongoose.Schema({
     enum: ['pending', 'acknowledged'],
     default: 'pending'
   },
-  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }
+  createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  senderResponse: {
+    status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
+    respondedAt: Date,
+    respondedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    remarks: String
+  }
 }, { timestamps: true });
 
 const ReturnChallan = mongoose.model('ReturnChallan', returnChallanSchema);
