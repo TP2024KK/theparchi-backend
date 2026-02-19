@@ -15,7 +15,10 @@ import partyRoutes from './routes/partyRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
-import challanNoteRoutes from './routes/challanNoteRoutes.js';  // ← ADDED
+import challanNoteRoutes from './routes/challanNoteRoutes.js';
+import warehouseRoutes from './routes/warehouseRoutes.js';
+import inventoryRoutes from './routes/inventoryRoutes.js';
+import stockMovementRoutes from './routes/stockMovementRoutes.js';  // ← ADDED
 
 const app = express();
 
@@ -86,7 +89,10 @@ app.use('/api/parties', partyRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/company', companyRoutes);
 app.use('/api/public', publicRoutes);
-app.use('/api/challan-notes', challanNoteRoutes);  // ← ADDED
+app.use('/api/challan-notes', challanNoteRoutes);
+app.use('/api/warehouses', warehouseRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/stock-movements', stockMovementRoutes);  // ← ADDED
 
 // 404 handler
 app.use('*', (req, res) => {
