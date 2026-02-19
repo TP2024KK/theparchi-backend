@@ -1,5 +1,6 @@
 import ChallanNote from '../models/ChallanNote.js';
 import Challan from '../models/Challan.js';
+import ReturnChallan from '../models/ReturnChallan.js';
 import Company from '../models/Company.js';
 import { Resend } from 'resend';
 
@@ -70,11 +71,24 @@ export const getNotes = async (req, res, next) => {
   try {
     const { challanId } = req.params;
 
-    const challan = await Challan.findById(challanId);
-    if (!challan) {
-      return res.status(404).json({ success: false, message: 'Challan not found' });
+    // Check access: own challan, received challan, or return challan
+    const ownChallan = await Challan.findOne({ _id: challanId, company: req.user.company });
+    if (!ownChallan) {
+      // Check if it's a received challan (sent to user's email)
+      const user = await User.findById(req.user.id);
+      const company = await Company.findById(req.user.company);
+      const emails = [user?.email, company?.email].filter(Boolean);
+      const receivedChallan = await Challan.findOne({ _id: challanId, emailSentTo: { $in: emails } });
+      const returnChallan = await ReturnChallan.findOne({
+        _id: challanId,
+        $or: [{ company: req.user.company }, { createdByCompany: req.user.company }, { createdBy: req.user.id }]
+      });
+      if (!receivedChallan && !returnChallan) {
+        return res.status(404).json({ success: false, message: 'Challan not found' });
+      }
     }
 
+    // Return all notes for this challan (visible to all parties)
     const notes = await ChallanNote.find({ challan: challanId })
       .populate('author', 'name email')
       .sort({ createdAt: 1 }); // oldest first for chat style
@@ -97,9 +111,22 @@ export const addNote = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Note text is required' });
     }
 
-    const challan = await Challan.findById(challanId).populate('party', 'name email');
+    // Check access: own challan, received challan, or return challan
+    let challan = await Challan.findOne({ _id: challanId, company: req.user.company })
+      .populate('party', 'name email');
     if (!challan) {
-      return res.status(404).json({ success: false, message: 'Challan not found' });
+      const user = await User.findById(req.user.id);
+      const company = await Company.findById(req.user.company);
+      const emails = [user?.email, company?.email].filter(Boolean);
+      challan = await Challan.findOne({ _id: challanId, emailSentTo: { $in: emails } })
+        .populate('party', 'name email');
+      const returnChallan = !challan ? await ReturnChallan.findOne({
+        _id: challanId,
+        $or: [{ company: req.user.company }, { createdByCompany: req.user.company }, { createdBy: req.user.id }]
+      }) : null;
+      if (!challan && !returnChallan) {
+        return res.status(404).json({ success: false, message: 'Challan not found' });
+      }
     }
 
     const note = await ChallanNote.create({
