@@ -45,12 +45,20 @@ export const getReturnChallans = async (req, res, next) => {
 // @route GET /api/return-challans/:id
 export const getReturnChallan = async (req, res, next) => {
   try {
-    const rc = await ReturnChallan.findOne({ _id: req.params.id, company: req.user.company })
+    // Allow access if: belongs to user's company OR was created by user (receiver return)
+    const rc = await ReturnChallan.findOne({
+      _id: req.params.id,
+      $or: [
+        { company: req.user.company },
+        { createdByCompany: req.user.company },
+        { createdBy: req.user.id }
+      ]
+    })
       .populate('party', 'name phone email address gstNumber')
       .populate('originalChallan', 'challanNumber challanDate')
       .populate('company', 'name address phone email gstNumber bankDetails settings logo signature')
       .populate('createdBy', 'name');
-    if (!rc) return res.status(404).json({ success: false, message: 'Not found' });
+    if (!rc) return res.status(404).json({ success: false, message: 'Return challan not found' });
     res.json({ success: true, data: rc });
   } catch (err) { next(err); }
 };
