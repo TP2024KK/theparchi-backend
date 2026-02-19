@@ -75,9 +75,9 @@ export const getNotes = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Challan not found' });
     }
 
-    const notes = await ChallanNote.find({ challan: challanId, company: req.user.company })
+    const notes = await ChallanNote.find({ challan: challanId })
       .populate('author', 'name email')
-      .sort({ createdAt: -1 }); // newest first
+      .sort({ createdAt: 1 }); // oldest first for chat style
 
     res.json({ success: true, data: notes, count: notes.length });
   } catch (error) { next(error); }
