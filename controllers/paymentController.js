@@ -56,7 +56,8 @@ export const addPayment = async (req, res, next) => {
 
     // Check overpayment
     const { totalPaid } = await getPaymentSummary(challan._id, challan.grandTotal);
-    if (totalPaid + amount > challan.grandTotal * 1.01) { // 1% tolerance
+    const numAmount = Number(amount);
+    if (totalPaid + numAmount > challan.grandTotal * 1.01) { // 1% tolerance
       return res.status(400).json({
         success: false,
         message: `Payment of ₹${amount} would exceed challan total ₹${challan.grandTotal}. Balance due: ₹${(challan.grandTotal - totalPaid).toFixed(2)}`
@@ -66,7 +67,7 @@ export const addPayment = async (req, res, next) => {
     const payment = await Payment.create({
       company: req.user.company,
       challan: challan._id,
-      amount: Number(amount),
+      amount: numAmount,
       mode,
       paymentDate: paymentDate || new Date(),
       reference,
