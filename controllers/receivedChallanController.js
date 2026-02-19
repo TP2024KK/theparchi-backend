@@ -386,19 +386,19 @@ export const getReceiverReturnsSent = async (req, res, next) => {
     }).select('_id');
     const receivedChallanIds = receivedChallans.map(c => c._id.toString());
 
-    // Step 2: Find return challans whose originalChallan is in that received list
-    // This ensures we only show returns against challans received, not sent
+    // Step 2: Find return challans created by this user
+    // Include: returns linked to received challans OR multi-challan returns (createdByCompany)
     const allMyReturns = await ReturnChallan.find({
-      createdBy: req.user.id,
+      $or: [
+        { createdBy: req.user.id, createdByCompany: req.user.company },
+        { createdBy: req.user.id, originalChallan: { $in: receivedChallanIds } }
+      ]
     }).populate('originalChallan', 'challanNumber challanDate emailSentTo')
       .populate('party', 'name phone email')
       .sort({ returnDate: -1 });
 
-    // Filter: only keep returns whose original challan was received by this user
-    let returns = allMyReturns.filter(rc => {
-      const origId = rc.originalChallan?._id?.toString();
-      return origId && receivedChallanIds.includes(origId);
-    });
+    // All returns from above query are valid - no additional filter needed
+    let returns = allMyReturns;
 
     if (from) returns = returns.filter(rc => new Date(rc.returnDate) >= new Date(from));
     if (to) returns = returns.filter(rc => new Date(rc.returnDate) <= new Date(to + 'T23:59:59'));
