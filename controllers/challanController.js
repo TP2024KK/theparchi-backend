@@ -7,6 +7,7 @@ import { sendChallanEmail } from '../utils/email.js';
 import { createNotification } from '../utils/notify.js';
 import crypto from 'crypto';
 import { deductStockForChallan } from './inventoryController.js';
+import InventoryItem from '../models/InventoryItem.js';
 
 // Helper: calculate totals from items
 const calcTotals = (items) => {
@@ -71,6 +72,20 @@ export const createChallan = async (req, res, next) => {
     if (action === 'send') {
       challanData.publicToken = crypto.randomBytes(32).toString('hex');
       challanData.emailSentAt = new Date();
+    }
+
+    // Block challan send if insufficient inventory stock
+    if (action === 'send') {
+      for (const item of processedItems) {
+        if (!item.inventoryItemId) continue;
+        const invItem = await InventoryItem.findOne({ _id: item.inventoryItemId, company: req.user.company });
+        if (invItem && invItem.currentStock < item.quantity) {
+          return res.status(400).json({
+            success: false,
+            message: `Insufficient stock for "${item.itemName}". Available: ${invItem.currentStock} ${invItem.unit}, Required: ${item.quantity} ${invItem.unit}`
+          });
+        }
+      }
     }
 
     const challan = await Challan.create(challanData);
@@ -226,6 +241,18 @@ export const sendChallan = async (req, res, next) => {
     const perms = await getUserPerms(req.user.id, req.user.company);
     if (!perms.all && !perms.canSendChallan) {
       return res.status(403).json({ success: false, message: 'No permission to send challans' });
+    }
+
+    // Block send if insufficient inventory stock
+    for (const item of challan.items) {
+      if (!item.inventoryItemId) continue;
+      const invItem = await InventoryItem.findOne({ _id: item.inventoryItemId, company: req.user.company });
+      if (invItem && invItem.currentStock < item.quantity) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient stock for "${item.itemName}". Available: ${invItem.currentStock} ${invItem.unit}, Required: ${item.quantity} ${invItem.unit}`
+        });
+      }
     }
 
     const isResend = challan.status === 'rejected';
