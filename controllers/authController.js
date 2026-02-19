@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
 import { generateToken } from '../utils/jwt.js';
@@ -275,12 +276,20 @@ export const resetPassword = async (req, res, next) => {
       });
     }
 
-    // Update password (pre-save hook will hash it since isModified = true)
-    // Clear OTP fields in same save operation
-    user.password = newPassword;
-    user.passwordResetOTP = undefined;
-    user.passwordResetExpires = undefined;
-    await user.save();
+    // Hash password directly and update via updateOne (100% bypasses pre-save hook)
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    await User.findByIdAndUpdate(
+      user._id,
+      {
+        $set: { password: hashedPassword },
+        $unset: { passwordResetOTP: 1, passwordResetExpires: 1 }
+      },
+      { new: true }
+    );
+
+    console.log('Password reset successful for:', email, '| new hash starts with:', hashedPassword.substring(0, 10));
 
     res.status(200).json({
       success: true,
