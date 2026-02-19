@@ -40,6 +40,7 @@ const challanItemSchema = new mongoose.Schema({
   },
   hsn: String,
   returnedQty: { type: Number, default: 0 },
+  inventoryItemId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', default: null },
   marginAccepted: {
     accepted: { type: Boolean, default: false },
     acceptedAt: Date,
