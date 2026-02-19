@@ -1,3 +1,4 @@
+import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
 import { generateToken } from '../utils/jwt.js';
@@ -275,11 +276,19 @@ export const resetPassword = async (req, res, next) => {
       });
     }
 
-    // Reset password
-    user.password = newPassword;
-    user.passwordResetOTP = undefined;
-    user.passwordResetExpires = undefined;
-    await user.save();
+    // Reset password - hash manually then use updateOne to bypass pre-save hook
+    // (same pattern as login/signup - user.save() would double-hash the password)
+    const salt = await bcrypt.genSalt(10);
+    const hashedPassword = await bcrypt.hash(newPassword, salt);
+
+    await User.updateOne(
+      { _id: user._id },
+      {
+        password: hashedPassword,
+        passwordResetOTP: undefined,
+        passwordResetExpires: undefined
+      }
+    );
 
     res.status(200).json({
       success: true,
