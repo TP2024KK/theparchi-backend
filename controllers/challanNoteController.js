@@ -2,12 +2,10 @@ import ChallanNote from '../models/ChallanNote.js';
 import Challan from '../models/Challan.js';
 import ReturnChallan from '../models/ReturnChallan.js';
 import Company from '../models/Company.js';
-import User from '../models/User.js';
 import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ─── Email helper ─────────────────────────────────────────────────────────────
 const sendNoteEmail = async ({ toEmails, challanNumber, noteText, authorName, companyName }) => {
   if (!toEmails || toEmails.length === 0) return false;
   try {
@@ -51,47 +49,23 @@ const sendNoteEmail = async ({ toEmails, challanNumber, noteText, authorName, co
   }
 };
 
-// ─── Helper: check if user can access this challan/return challan ─────────────
-const checkAccess = async (challanId, userId, companyId) => {
-  // 1. Own sent challan
-  const ownChallan = await Challan.findOne({ _id: challanId, company: companyId });
-  if (ownChallan) return { allowed: true, doc: ownChallan, type: 'challan' };
-
-  // 2. Received challan - get company email to check emailSentTo
-  const myCompany = await Company.findById(companyId).select('email');
-  const myUser = await User.findById(userId).select('email');
-  const emails = [myCompany?.email, myUser?.email].filter(Boolean);
-  
-  if (emails.length > 0) {
-    const receivedChallan = await Challan.findOne({ _id: challanId, emailSentTo: { $in: emails } });
-    if (receivedChallan) return { allowed: true, doc: receivedChallan, type: 'received_challan' };
-  }
-
-  // 3. Return challan - own company or created by this user
-  const returnChallan = await ReturnChallan.findOne({
-    _id: challanId,
-    $or: [
-      { company: companyId },
-      { createdByCompany: companyId },
-      { createdBy: userId }
-    ]
-  });
-  if (returnChallan) return { allowed: true, doc: returnChallan, type: 'return_challan' };
-
-  return { allowed: false };
-};
-
 // @desc   Get all notes for a challan
 // @route  GET /api/challan-notes/:challanId
 export const getNotes = async (req, res, next) => {
   try {
     const { challanId } = req.params;
 
-    const access = await checkAccess(challanId, req.user.id, req.user.company);
-    if (!access.allowed) {
+    // Try regular challan first (works for both sender and receiver - no company filter)
+    let doc = await Challan.findById(challanId);
+    // If not a regular challan, try return challan
+    if (!doc) {
+      doc = await ReturnChallan.findById(challanId);
+    }
+    if (!doc) {
       return res.status(404).json({ success: false, message: 'Challan not found' });
     }
 
+    // No company filter on notes - both sender and receiver can see all notes
     const notes = await ChallanNote.find({ challan: challanId })
       .populate('author', 'name email')
       .sort({ createdAt: 1 });
@@ -111,8 +85,12 @@ export const addNote = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Note text is required' });
     }
 
-    const access = await checkAccess(challanId, req.user.id, req.user.company);
-    if (!access.allowed) {
+    // Try regular challan first, then return challan
+    let doc = await Challan.findById(challanId).populate('party', 'name email');
+    if (!doc) {
+      doc = await ReturnChallan.findById(challanId);
+    }
+    if (!doc) {
       return res.status(404).json({ success: false, message: 'Challan not found' });
     }
 
@@ -127,10 +105,9 @@ export const addNote = async (req, res, next) => {
 
     await note.populate('author', 'name email');
 
-    // Send email in background
     if (notifyEmails.length > 0) {
       const company = await Company.findById(req.user.company);
-      const challanNumber = access.doc?.challanNumber || access.doc?.returnChallanNumber || '';
+      const challanNumber = doc.challanNumber || doc.returnChallanNumber || '';
       sendNoteEmail({
         toEmails: notifyEmails,
         challanNumber,
