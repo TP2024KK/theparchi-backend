@@ -240,9 +240,9 @@ export const resetPassword = async (req, res, next) => {
       });
     }
 
-    // Find user with OTP (include hidden fields)
-    const user = await User.findOne({ email })
-      .select('+passwordResetOTP +passwordResetExpires');
+    // Find user with OTP AND password (all hidden fields needed for save)
+    const user = await User.findOne({ email: email.toLowerCase() })
+      .select('+passwordResetOTP +passwordResetExpires +password');
 
     if (!user) {
       return res.status(400).json({
@@ -275,15 +275,12 @@ export const resetPassword = async (req, res, next) => {
       });
     }
 
-    // Step 1: Set new password and save → pre-save hook hashes it once (correct)
+    // Update password (pre-save hook will hash it since isModified = true)
+    // Clear OTP fields in same save operation
     user.password = newPassword;
+    user.passwordResetOTP = undefined;
+    user.passwordResetExpires = undefined;
     await user.save();
-
-    // Step 2: Clear OTP fields via updateOne to avoid triggering pre-save hook again
-    await User.updateOne(
-      { _id: user._id },
-      { $unset: { passwordResetOTP: 1, passwordResetExpires: 1 } }
-    );
 
     res.status(200).json({
       success: true,
