@@ -45,6 +45,11 @@ const companySchema = new mongoose.Schema({
       enum: ['computer_generated', 'uploaded'],
       default: 'computer_generated'
     },
+    
+    // NEW FIELDS FOR FEATURES 3 & 4:
+    termsAndConditions: { type: String, default: '' },
+    showComputerGeneratedLine: { type: Boolean, default: true },
+    
     // Party-specific challan prefix rules
     partyPrefixRules: [{
       party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party' },

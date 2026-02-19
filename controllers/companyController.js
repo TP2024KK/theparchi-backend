@@ -87,18 +87,23 @@ export const updateSettings = async (req, res, next) => {
       });
     }
 
-    const { challanPrefix, returnChallanPrefix, defaultGST } = req.body;
-
-    if (challanPrefix) company.settings.challanPrefix = challanPrefix;
-    if (returnChallanPrefix) company.settings.returnChallanPrefix = returnChallanPrefix;
-    if (defaultGST !== undefined) company.settings.defaultGST = defaultGST;
+    // UPDATED: Allow updating all settings fields
+    const { settings } = req.body;
+    
+    if (settings) {
+      // Merge new settings with existing settings
+      company.settings = {
+        ...company.settings.toObject(),
+        ...settings
+      };
+    }
 
     await company.save();
 
     res.status(200).json({
       success: true,
       message: 'Settings updated successfully',
-      data: company.settings
+      data: company
     });
   } catch (error) {
     next(error);
