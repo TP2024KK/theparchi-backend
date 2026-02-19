@@ -148,12 +148,31 @@ export const getChallans = async (req, res, next) => {
 // @route GET /api/challans/:id
 export const getChallan = async (req, res, next) => {
   try {
-    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company })
+    // First try own company
+    let challan = await Challan.findOne({ _id: req.params.id, company: req.user.company })
       .populate('party')
       .populate('createdBy', 'name email')
       .populate('sfpAssignedTo', 'name email')
       .populate('sfpTrail.by', 'name')
       .populate('sfpTrail.to', 'name');
+
+    // If not found, check if this challan was sent to this user (received challan PDF access)
+    if (!challan) {
+      const user = await User.findById(req.user.id);
+      const company = await Company.findById(req.user.company);
+      const emails = [user?.email, company?.email].filter(Boolean);
+      challan = await Challan.findOne({
+        _id: req.params.id,
+        emailSentTo: { $in: emails }
+      })
+        .populate('party')
+        .populate('company', 'name address phone email gstNumber bankDetails settings logo signature')
+        .populate('createdBy', 'name email')
+        .populate('sfpAssignedTo', 'name email')
+        .populate('sfpTrail.by', 'name')
+        .populate('sfpTrail.to', 'name');
+    }
+
     if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
     res.json({ success: true, data: challan });
   } catch (error) { next(error); }
