@@ -19,7 +19,7 @@ const returnChallanSchema = new mongoose.Schema({
   company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
   returnChallanNumber: { type: String, required: true, unique: true },
   originalChallan: { type: mongoose.Schema.Types.ObjectId, ref: 'Challan' }, // primary challan (optional, for backward compat)
-  party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', required: true },
+  party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', default: null },
   returnDate: { type: Date, default: Date.now },
   items: [returnItemSchema],
   subtotal: { type: Number, default: 0 },
@@ -37,6 +37,8 @@ const returnChallanSchema = new mongoose.Schema({
     default: 'pending'
   },
   createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  createdByCompany: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },
+  receiverCompanyName: { type: String },
   senderResponse: {
     status: { type: String, enum: ['pending', 'accepted', 'rejected'], default: 'pending' },
     respondedAt: Date,
