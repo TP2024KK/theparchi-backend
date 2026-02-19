@@ -2,14 +2,14 @@ import ChallanNote from '../models/ChallanNote.js';
 import Challan from '../models/Challan.js';
 import ReturnChallan from '../models/ReturnChallan.js';
 import Company from '../models/Company.js';
+import User from '../models/User.js';
 import { Resend } from 'resend';
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
-// ─── Email helper using Resend (same as your email.js) ────────────────────────
+// ─── Email helper ─────────────────────────────────────────────────────────────
 const sendNoteEmail = async ({ toEmails, challanNumber, noteText, authorName, companyName }) => {
   if (!toEmails || toEmails.length === 0) return false;
-
   try {
     const html = `
       <!DOCTYPE html>
@@ -17,44 +17,33 @@ const sendNoteEmail = async ({ toEmails, challanNumber, noteText, authorName, co
       <head><meta charset="UTF-8"></head>
       <body style="font-family:Arial,sans-serif;background:#f5f5f5;margin:0;padding:20px">
         <div style="max-width:600px;margin:0 auto;background:#fff;border-radius:8px;overflow:hidden;box-shadow:0 2px 10px rgba(0,0,0,0.1)">
-          
           <div style="background:#1976d2;padding:25px;text-align:center">
             <h1 style="color:#fff;margin:0;font-size:22px">📋 New Note on Challan ${challanNumber}</h1>
             <p style="color:rgba(255,255,255,0.85);margin:8px 0 0;font-size:14px">${companyName}</p>
           </div>
-
           <div style="padding:25px">
             <p style="font-size:15px;color:#333">
               <strong>${authorName}</strong> added a note to challan <strong>${challanNumber}</strong>:
             </p>
-
             <div style="background:#f0f4ff;border-left:4px solid #1976d2;border-radius:4px;padding:16px 20px;margin:20px 0">
               <p style="margin:0;color:#333;font-size:15px;line-height:1.6">${noteText}</p>
             </div>
-
             <p style="color:#888;font-size:12px;border-top:1px solid #eee;padding-top:15px;margin-top:20px">
               This is an automated notification from TheParchi. Do not reply to this email.<br>
               Powered by <strong>TheParchi</strong>
             </p>
           </div>
-
         </div>
       </body>
       </html>
     `;
-
-    const { data, error } = await resend.emails.send({
+    const { error } = await resend.emails.send({
       from: `${process.env.FROM_NAME || 'TheParchi'} <${process.env.FROM_EMAIL}>`,
       to: toEmails,
       subject: `📋 New Note — Challan ${challanNumber} | ${companyName}`,
       html,
     });
-
-    if (error) {
-      console.error('Note email error:', error);
-      return false;
-    }
-
+    if (error) { console.error('Note email error:', error); return false; }
     return true;
   } catch (err) {
     console.error('Note email send failed:', err.message);
@@ -62,46 +51,57 @@ const sendNoteEmail = async ({ toEmails, challanNumber, noteText, authorName, co
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Helper: check if user can access this challan/return challan ─────────────
+const checkAccess = async (challanId, userId, companyId) => {
+  // 1. Own sent challan
+  const ownChallan = await Challan.findOne({ _id: challanId, company: companyId });
+  if (ownChallan) return { allowed: true, doc: ownChallan, type: 'challan' };
+
+  // 2. Received challan - get company email to check emailSentTo
+  const myCompany = await Company.findById(companyId).select('email');
+  const myUser = await User.findById(userId).select('email');
+  const emails = [myCompany?.email, myUser?.email].filter(Boolean);
+  
+  if (emails.length > 0) {
+    const receivedChallan = await Challan.findOne({ _id: challanId, emailSentTo: { $in: emails } });
+    if (receivedChallan) return { allowed: true, doc: receivedChallan, type: 'received_challan' };
+  }
+
+  // 3. Return challan - own company or created by this user
+  const returnChallan = await ReturnChallan.findOne({
+    _id: challanId,
+    $or: [
+      { company: companyId },
+      { createdByCompany: companyId },
+      { createdBy: userId }
+    ]
+  });
+  if (returnChallan) return { allowed: true, doc: returnChallan, type: 'return_challan' };
+
+  return { allowed: false };
+};
+
 // @desc   Get all notes for a challan
 // @route  GET /api/challan-notes/:challanId
-// @access Private
-// ─────────────────────────────────────────────────────────────────────────────
 export const getNotes = async (req, res, next) => {
   try {
     const { challanId } = req.params;
 
-    // Check access: own challan, received challan, or return challan
-    const ownChallan = await Challan.findOne({ _id: challanId, company: req.user.company });
-    if (!ownChallan) {
-      // Check if it's a received challan (sent to user's email)
-      const user = await User.findById(req.user.id);
-      const company = await Company.findById(req.user.company);
-      const emails = [user?.email, company?.email].filter(Boolean);
-      const receivedChallan = await Challan.findOne({ _id: challanId, emailSentTo: { $in: emails } });
-      const returnChallan = await ReturnChallan.findOne({
-        _id: challanId,
-        $or: [{ company: req.user.company }, { createdByCompany: req.user.company }, { createdBy: req.user.id }]
-      });
-      if (!receivedChallan && !returnChallan) {
-        return res.status(404).json({ success: false, message: 'Challan not found' });
-      }
+    const access = await checkAccess(challanId, req.user.id, req.user.company);
+    if (!access.allowed) {
+      return res.status(404).json({ success: false, message: 'Challan not found' });
     }
 
-    // Return all notes for this challan (visible to all parties)
     const notes = await ChallanNote.find({ challan: challanId })
       .populate('author', 'name email')
-      .sort({ createdAt: 1 }); // oldest first for chat style
+      .sort({ createdAt: 1 });
 
     res.json({ success: true, data: notes, count: notes.length });
   } catch (error) { next(error); }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // @desc   Add a note to a challan
 // @route  POST /api/challan-notes/:challanId
-// @access Private
-// ─────────────────────────────────────────────────────────────────────────────
 export const addNote = async (req, res, next) => {
   try {
     const { challanId } = req.params;
@@ -111,22 +111,9 @@ export const addNote = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Note text is required' });
     }
 
-    // Check access: own challan, received challan, or return challan
-    let challan = await Challan.findOne({ _id: challanId, company: req.user.company })
-      .populate('party', 'name email');
-    if (!challan) {
-      const user = await User.findById(req.user.id);
-      const company = await Company.findById(req.user.company);
-      const emails = [user?.email, company?.email].filter(Boolean);
-      challan = await Challan.findOne({ _id: challanId, emailSentTo: { $in: emails } })
-        .populate('party', 'name email');
-      const returnChallan = !challan ? await ReturnChallan.findOne({
-        _id: challanId,
-        $or: [{ company: req.user.company }, { createdByCompany: req.user.company }, { createdBy: req.user.id }]
-      }) : null;
-      if (!challan && !returnChallan) {
-        return res.status(404).json({ success: false, message: 'Challan not found' });
-      }
+    const access = await checkAccess(challanId, req.user.id, req.user.company);
+    if (!access.allowed) {
+      return res.status(404).json({ success: false, message: 'Challan not found' });
     }
 
     const note = await ChallanNote.create({
@@ -140,21 +127,19 @@ export const addNote = async (req, res, next) => {
 
     await note.populate('author', 'name email');
 
-    // Send email in background — don't block the response
+    // Send email in background
     if (notifyEmails.length > 0) {
       const company = await Company.findById(req.user.company);
+      const challanNumber = access.doc?.challanNumber || access.doc?.returnChallanNumber || '';
       sendNoteEmail({
         toEmails: notifyEmails,
-        challanNumber: challan.challanNumber,
+        challanNumber,
         noteText: text.trim(),
         authorName: note.author?.name || 'Team Member',
         companyName: company?.name || 'TheParchi',
       }).then(sent => {
         if (sent) {
-          ChallanNote.updateOne(
-            { _id: note._id },
-            { emailSent: true, emailSentAt: new Date() }
-          ).catch(() => {});
+          ChallanNote.updateOne({ _id: note._id }, { emailSent: true, emailSentAt: new Date() }).catch(() => {});
         }
       });
     }
@@ -167,22 +152,17 @@ export const addNote = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // @desc   Delete a note (only by author)
 // @route  DELETE /api/challan-notes/note/:noteId
-// @access Private
-// ─────────────────────────────────────────────────────────────────────────────
 export const deleteNote = async (req, res, next) => {
   try {
     const note = await ChallanNote.findOne({ _id: req.params.noteId, company: req.user.company });
     if (!note) {
       return res.status(404).json({ success: false, message: 'Note not found' });
     }
-
     if (note.author.toString() !== req.user.id.toString()) {
       return res.status(403).json({ success: false, message: 'Only the note author can delete it' });
     }
-
     await note.deleteOne();
     res.json({ success: true, message: 'Note deleted' });
   } catch (error) { next(error); }
