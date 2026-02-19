@@ -70,7 +70,7 @@ export const getNotes = async (req, res, next) => {
   try {
     const { challanId } = req.params;
 
-    const challan = await Challan.findOne({ _id: challanId, company: req.user.company });
+    const challan = await Challan.findById(challanId);
     if (!challan) {
       return res.status(404).json({ success: false, message: 'Challan not found' });
     }
@@ -97,8 +97,7 @@ export const addNote = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Note text is required' });
     }
 
-    const challan = await Challan.findOne({ _id: challanId, company: req.user.company })
-      .populate('party', 'name email');
+    const challan = await Challan.findById(challanId).populate('party', 'name email');
     if (!challan) {
       return res.status(404).json({ success: false, message: 'Challan not found' });
     }
