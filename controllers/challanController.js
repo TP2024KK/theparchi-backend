@@ -6,6 +6,7 @@ import TeamMember from '../models/TeamMember.js';
 import { sendChallanEmail } from '../utils/email.js';
 import { createNotification } from '../utils/notify.js';
 import crypto from 'crypto';
+import { deductStockForChallan } from './inventoryController.js';
 
 // Helper: calculate totals from items
 const calcTotals = (items) => {
@@ -87,6 +88,13 @@ export const createChallan = async (req, res, next) => {
         await Challan.updateOne({ _id: challan._id }, { emailSentTo: partyDoc.email });
         sendChallanEmail(challan, partyDoc, company, req.user).catch(e => console.error('Email failed:', e));
       }
+      // Auto-deduct inventory stock for linked items
+      deductStockForChallan({
+        companyId: req.user.company,
+        userId: req.user.id,
+        challanId: challan._id,
+        items: processedItems
+      }).catch(e => console.error('Stock deduction failed:', e));
     }
 
     res.status(201).json({ success: true, message: `Challan ${status}!`, data: challan });
@@ -192,6 +200,13 @@ export const updateChallan = async (req, res, next) => {
         await Challan.updateOne({ _id: challan._id }, { emailSentTo: partyDoc.email });
         sendChallanEmail(updated, partyDoc, company, req.user).catch(e => console.error('Email failed:', e));
       }
+      // Auto-deduct inventory stock for linked items
+      deductStockForChallan({
+        companyId: req.user.company,
+        userId: req.user.id,
+        challanId: challan._id,
+        items: req.body.items || []
+      }).catch(e => console.error('Stock deduction failed:', e));
     }
 
     res.json({ success: true, message: `Challan ${isResend ? 'resent' : newStatus}!`, data: updated });
@@ -231,6 +246,15 @@ export const sendChallan = async (req, res, next) => {
       await Challan.updateOne({ _id: challan._id }, { emailSentTo: challan.party.email });
       sendChallanEmail(updated, challan.party, company, req.user).catch(e => console.error('Email error:', e));
     }
+
+    // Auto-deduct inventory stock for linked items
+    const fullChallan = await Challan.findById(challan._id);
+    deductStockForChallan({
+      companyId: req.user.company,
+      userId: req.user.id,
+      challanId: challan._id,
+      items: fullChallan?.items || []
+    }).catch(e => console.error('Stock deduction failed:', e));
 
     res.json({ success: true, message: isResend ? 'Challan resent successfully!' : 'Challan sent successfully!' });
   } catch (error) { next(error); }
