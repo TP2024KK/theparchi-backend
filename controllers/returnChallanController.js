@@ -45,20 +45,12 @@ export const getReturnChallans = async (req, res, next) => {
 // @route GET /api/return-challans/:id
 export const getReturnChallan = async (req, res, next) => {
   try {
-    // Allow access if: belongs to user's company OR was created by user (receiver return)
-    const rc = await ReturnChallan.findOne({
-      _id: req.params.id,
-      $or: [
-        { company: req.user.company },
-        { createdByCompany: req.user.company },
-        { createdBy: req.user.id }
-      ]
-    })
+    const rc = await ReturnChallan.findOne({ _id: req.params.id, company: req.user.company })
       .populate('party', 'name phone email address gstNumber')
       .populate('originalChallan', 'challanNumber challanDate')
       .populate('company', 'name address phone email gstNumber bankDetails settings logo signature')
       .populate('createdBy', 'name');
-    if (!rc) return res.status(404).json({ success: false, message: 'Return challan not found' });
+    if (!rc) return res.status(404).json({ success: false, message: 'Not found' });
     res.json({ success: true, data: rc });
   } catch (err) { next(err); }
 };
@@ -217,7 +209,10 @@ export const getLedger = async (req, res, next) => {
     // Base filter - ALL accepted/returned challans (never exclude from ledger)
     const filter = {
       company: req.user.company,
-      status: { $in: ['accepted', 'self_accepted', 'returned', 'self_returned', 'partially_returned', 'partially_self_returned'] }
+      $or: [
+        { status: { $in: ['accepted', 'self_accepted', 'returned', 'self_returned', 'partially_returned', 'partially_self_returned'] } },
+        { status: 'sent', 'partyResponse.status': 'accepted' }
+      ]
     };
 
     // Optional filters
