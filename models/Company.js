@@ -1,5 +1,20 @@
 import mongoose from 'mongoose';
 
+const customColumnSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  type: { type: String, enum: ['text', 'number', 'date', 'dropdown', 'checkbox'], default: 'text' },
+  options: [String],
+  required: { type: Boolean, default: false },
+}, { _id: true });
+
+const challanTemplateSchema = new mongoose.Schema({
+  name: { type: String, required: true },
+  itemNameLabel: { type: String, default: 'Item Name' },
+  hsnLabel: { type: String, default: 'HSN/SAC' },
+  customColumns: { type: [customColumnSchema], default: [] },
+  isDefault: { type: Boolean, default: false },
+}, { _id: true });
+
 const companySchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Company name is required'], trim: true },
   email: { type: String, lowercase: true, trim: true },
@@ -9,48 +24,44 @@ const companySchema = new mongoose.Schema({
     state: String, pincode: String,
     country: { type: String, default: 'India' }
   },
-  gstNumber: {
-    type: String, trim: true, uppercase: true
-  },
+  gstNumber: { type: String, trim: true, uppercase: true },
   pan: { type: String, trim: true, uppercase: true },
-  logo: { type: String }, // base64 or URL
-  signature: { type: String }, // base64 PNG
+  logo: { type: String },
+  signature: { type: String },
 
   bankDetails: {
-    accountName: String,
-    accountNumber: String,
-    ifscCode: String,
-    bankName: String,
-    branch: String,
-    upiId: String
+    accountName: String, accountNumber: String,
+    ifscCode: String, bankName: String,
+    branch: String, upiId: String
+  },
+
+  // Challan templates — up to 5
+  challanTemplates: {
+    type: [challanTemplateSchema],
+    default: () => [{
+      name: 'Default',
+      itemNameLabel: 'Item Name',
+      hsnLabel: 'HSN/SAC',
+      customColumns: [],
+      isDefault: true,
+    }]
   },
 
   settings: {
-    // Challan numbering
     challanPrefix: { type: String, default: 'CH' },
     returnChallanPrefix: { type: String, default: 'RCH' },
     nextChallanNumber: { type: Number, default: 1 },
     nextReturnChallanNumber: { type: Number, default: 1 },
     defaultGST: { type: Number, default: 18 },
-
-    // PDF Display Options
     documentHeading: { type: String, default: 'DELIVERY CHALLAN' },
     addressLabel: { type: String, default: 'BILL TO / DELIVER TO' },
     showGST: { type: Boolean, default: true },
     showBankDetails: { type: Boolean, default: false },
     showHSN: { type: Boolean, default: false },
     showSignature: { type: Boolean, default: false },
-    signatureType: {
-      type: String,
-      enum: ['computer_generated', 'uploaded'],
-      default: 'computer_generated'
-    },
-    
-    // NEW FIELDS FOR FEATURES 3 & 4:
+    signatureType: { type: String, enum: ['computer_generated', 'uploaded'], default: 'computer_generated' },
     termsAndConditions: { type: String, default: '' },
     showComputerGeneratedLine: { type: Boolean, default: true },
-    
-    // Party-specific challan prefix rules
     partyPrefixRules: [{
       party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party' },
       prefix: String
