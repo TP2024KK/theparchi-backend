@@ -15,7 +15,7 @@ import partyRoutes from './routes/partyRoutes.js';
 import teamRoutes from './routes/teamRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
-import paymentRoutes from './routes/paymentRoutes.js';
+import challanNoteRoutes from './routes/challanNoteRoutes.js';
 
 const app = express();
 
@@ -86,7 +86,7 @@ app.use('/api/parties', partyRoutes);
 app.use('/api/team', teamRoutes);
 app.use('/api/company', companyRoutes);
 app.use('/api/public', publicRoutes);
-app.use('/api/payments', paymentRoutes);
+app.use('/api/challan-notes', challanNoteRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
