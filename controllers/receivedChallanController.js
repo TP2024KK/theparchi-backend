@@ -53,7 +53,6 @@ export const acceptReceivedChallan = async (req, res, next) => {
       remarks: remarks || '',
       selfAction: false
     };
-    challan.status = 'accepted';
     await challan.save();
 
     // Notify sender
@@ -205,10 +204,8 @@ export const getReceivedItems = async (req, res, next) => {
 
     const filter = {
       emailSentTo: { $in: emails },
-      $or: [
-        { status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned'] } },
-        { status: 'sent', 'partyResponse.status': 'accepted' }
-      ]
+      status: 'sent',
+      'partyResponse.status': 'accepted'
     };
     if (senderCompany) filter.company = senderCompany;
 
@@ -389,18 +386,22 @@ export const getReceiverReturnsSent = async (req, res, next) => {
     }).select('_id');
     const receivedChallanIds = receivedChallans.map(c => c._id.toString());
 
-    // Step 2: Find return challans whose originalChallan is in that received list
-    // This ensures we only show returns against challans received, not sent
+    // Step 2: Find return challans created by this user against received challans
     const allMyReturns = await ReturnChallan.find({
-      createdBy: req.user.id,
+      $or: [
+        { createdBy: req.user.id },
+        { createdByCompany: req.user.company }
+      ]
     }).populate('originalChallan', 'challanNumber challanDate emailSentTo')
       .populate('party', 'name phone email')
       .sort({ returnDate: -1 });
 
-    // Filter: only keep returns whose original challan was received by this user
+    // Filter: keep returns whose originalChallan OR any item's originalChallan is a received challan
     let returns = allMyReturns.filter(rc => {
-      const origId = rc.originalChallan?._id?.toString();
-      return origId && receivedChallanIds.includes(origId);
+      if (rc.originalChallan?._id && receivedChallanIds.includes(rc.originalChallan._id.toString())) return true;
+      return rc.items && rc.items.some(item =>
+        item.originalChallan && receivedChallanIds.includes(item.originalChallan.toString())
+      );
     });
 
     if (from) returns = returns.filter(rc => new Date(rc.returnDate) >= new Date(from));
@@ -422,7 +423,10 @@ export const getReceiverLedger = async (req, res, next) => {
     // Find all challans received by this user
     const challanFilter = {
       emailSentTo: { $in: emails },
-      status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] }
+      $or: [
+        { status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] } },
+        { status: 'sent', 'partyResponse.status': 'accepted' }
+      ]
     };
     if (senderCompany) challanFilter.company = senderCompany;
     if (from || to) {
@@ -441,11 +445,19 @@ export const getReceiverLedger = async (req, res, next) => {
     // Get all returns created by this user against RECEIVED challans only
     const receivedChallanIds = new Set(challans.map(c => c._id.toString()));
     const allReturnsRaw = await ReturnChallan.find({
-      createdBy: req.user.id,
+      $or: [
+        { createdBy: req.user.id },
+        { createdByCompany: req.user.company }
+      ]
     }).sort({ returnDate: 1 });
-    const allReturns = allReturnsRaw.filter(rc =>
-      rc.originalChallan && receivedChallanIds.has(rc.originalChallan.toString())
-    );
+    // Include single-challan returns AND multi-challan returns whose items reference received challans
+    const allReturns = allReturnsRaw.filter(rc => {
+      if (rc.originalChallan && receivedChallanIds.has(rc.originalChallan.toString())) return true;
+      // Multi-challan return: check if any item references a received challan
+      return rc.items && rc.items.some(item =>
+        item.originalChallan && receivedChallanIds.has(item.originalChallan.toString())
+      );
+    });
 
     const ledger = [];
     for (const challan of challans) {
