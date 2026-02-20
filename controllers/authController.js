@@ -1,4 +1,3 @@
-import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
 import Company from '../models/Company.js';
 import { generateToken } from '../utils/jwt.js';
@@ -108,7 +107,8 @@ export const login = async (req, res, next) => {
       return res.status(401).json({ success: false, message: 'Your account has been deactivated. Please contact your administrator.' });
     }
 
-    if (!user.company) {
+    // Super admin has no company - that's OK
+    if (!user.company && !user.isSuperAdmin) {
       console.log('Login failed: user has no company:', user._id);
       return res.status(401).json({ success: false, message: 'Account not linked to any company. Contact your admin.' });
     }
@@ -136,6 +136,7 @@ export const login = async (req, res, next) => {
           name: user.name,
           email: user.email,
           role: user.role,
+          isSuperAdmin: user.isSuperAdmin || false,
           company: user.company ? {
             id: user.company._id,
             name: user.company.name
@@ -241,9 +242,9 @@ export const resetPassword = async (req, res, next) => {
       });
     }
 
-    // Find user with OTP AND password (all hidden fields needed for save)
-    const user = await User.findOne({ email: email.toLowerCase() })
-      .select('+passwordResetOTP +passwordResetExpires +password');
+    // Find user with OTP (include hidden fields)
+    const user = await User.findOne({ email })
+      .select('+passwordResetOTP +passwordResetExpires');
 
     if (!user) {
       return res.status(400).json({
@@ -276,20 +277,11 @@ export const resetPassword = async (req, res, next) => {
       });
     }
 
-    // Hash password directly and update via updateOne (100% bypasses pre-save hook)
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(newPassword, salt);
-
-    await User.findByIdAndUpdate(
-      user._id,
-      {
-        $set: { password: hashedPassword },
-        $unset: { passwordResetOTP: 1, passwordResetExpires: 1 }
-      },
-      { new: true }
-    );
-
-    console.log('Password reset successful for:', email, '| new hash starts with:', hashedPassword.substring(0, 10));
+    // Reset password
+    user.password = newPassword;
+    user.passwordResetOTP = undefined;
+    user.passwordResetExpires = undefined;
+    await user.save();
 
     res.status(200).json({
       success: true,

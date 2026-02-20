@@ -28,12 +28,16 @@ const userSchema = new mongoose.Schema({
   company: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
-    required: true
+    default: null  // null for super admin
   },
   role: {
     type: String,
-    enum: ['owner', 'admin', 'manager', 'staff'],
+    enum: ['super_admin', 'owner', 'admin', 'manager', 'staff'],
     default: 'staff'
+  },
+  isSuperAdmin: {
+    type: Boolean,
+    default: false
   },
   isActive: {
     type: Boolean,

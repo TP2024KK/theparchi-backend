@@ -68,6 +68,33 @@ const companySchema = new mongoose.Schema({
     }]
   },
 
+  subscription: {
+    plan: { type: String, enum: ['free', 'starter', 'growth', 'enterprise'], default: 'free' },
+    status: { type: String, enum: ['active', 'suspended', 'cancelled', 'trial'], default: 'active' },
+    startDate: { type: Date, default: Date.now },
+    endDate: Date,
+    billingCycle: { type: String, enum: ['monthly', 'yearly'], default: 'monthly' },
+    nextBillingDate: Date,
+    price: { type: Number, default: 0 },
+  },
+
+  limits: {
+    maxUsers: { type: Number, default: 1 },
+    maxChallansPerMonth: { type: Number, default: 25 },
+    maxStorageMB: { type: Number, default: 100 },
+  },
+
+  usage: {
+    currentUsers: { type: Number, default: 0 },
+    challansThisMonth: { type: Number, default: 0 },
+    storageMB: { type: Number, default: 0 },
+    lastResetDate: { type: Date, default: Date.now },
+  },
+
+  suspensionReason: String,
+  registeredAt: { type: Date, default: Date.now },
+  lastLoginAt: Date,
+
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
