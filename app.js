@@ -16,6 +16,9 @@ import teamRoutes from './routes/teamRoutes.js';
 import companyRoutes from './routes/companyRoutes.js';
 import publicRoutes from './routes/publicRoutes.js';
 import challanNoteRoutes from './routes/challanNoteRoutes.js';
+import inventoryRoutes from './routes/inventoryRoutes.js';
+import warehouseRoutes from './routes/warehouseRoutes.js';
+import stockMovementRoutes from './routes/stockMovementRoutes.js';
 
 const app = express();
 
@@ -87,6 +90,9 @@ app.use('/api/team', teamRoutes);
 app.use('/api/company', companyRoutes);
 app.use('/api/public', publicRoutes);
 app.use('/api/challan-notes', challanNoteRoutes);
+app.use('/api/inventory', inventoryRoutes);
+app.use('/api/warehouses', warehouseRoutes);
+app.use('/api/stock-movements', stockMovementRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
