@@ -43,13 +43,19 @@ export const updateCompany = async (req, res, next) => {
     scalarFields.forEach(f => { if (req.body[f] !== undefined) company[f] = req.body[f]; });
 
     // Nested objects
-    if (req.body.address)     company.address     = { ...company.address.toObject(),     ...req.body.address };
-    if (req.body.bankDetails) company.bankDetails = { ...company.bankDetails.toObject(), ...req.body.bankDetails };
-    if (req.body.settings)    company.settings    = { ...company.settings.toObject(),    ...req.body.settings };
+    if (req.body.address)     company.address     = { ...(company.address?.toObject?.() || company.address || {}),     ...req.body.address };
+    if (req.body.bankDetails) company.bankDetails = { ...(company.bankDetails?.toObject?.() || company.bankDetails || {}), ...req.body.bankDetails };
+    if (req.body.settings)    company.settings    = { ...(company.settings?.toObject?.()    || company.settings    || {}), ...req.body.settings };
 
-    // Arrays - direct replace so Mongoose tracks the change
+    // Arrays - strip invalid _ids so Mongoose auto-generates them
     if (req.body.challanTemplates !== undefined) {
-      company.challanTemplates = req.body.challanTemplates;
+      const mongoose = await import('mongoose');
+      company.challanTemplates = req.body.challanTemplates.map(t => {
+        const { _id, ...rest } = t;
+        // Keep _id only if it's a valid ObjectId, otherwise let Mongoose generate one
+        const isValidId = _id && mongoose.default.Types.ObjectId.isValid(_id) && String(new mongoose.default.Types.ObjectId(_id)) === String(_id);
+        return isValidId ? { _id, ...rest } : rest;
+      });
       company.markModified('challanTemplates');
     }
 
