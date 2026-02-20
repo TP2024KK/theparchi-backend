@@ -42,7 +42,7 @@ const getUserPerms = async (userId, companyId) => {
 // @route POST /api/challans
 export const createChallan = async (req, res, next) => {
   try {
-    const { party, challanDate, items, notes, action = 'draft' } = req.body;
+    const { party, challanDate, items, notes, action = 'draft', challanTemplate } = req.body;
     // action: 'draft' | 'save' (created) | 'send' (created+sent)
 
     const perms = await getUserPerms(req.user.id, req.user.company);
@@ -63,6 +63,7 @@ export const createChallan = async (req, res, next) => {
       challanDate: challanDate || Date.now(),
       items: processedItems,
       subtotal, totalGST, grandTotal, notes,
+      challanTemplate: challanTemplate || null,
       createdBy: req.user.id,
       status,
       sfpTrail: [{ action: 'created', by: req.user.id, at: new Date() }]
@@ -148,31 +149,12 @@ export const getChallans = async (req, res, next) => {
 // @route GET /api/challans/:id
 export const getChallan = async (req, res, next) => {
   try {
-    // First try own company
-    let challan = await Challan.findOne({ _id: req.params.id, company: req.user.company })
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company })
       .populate('party')
       .populate('createdBy', 'name email')
       .populate('sfpAssignedTo', 'name email')
       .populate('sfpTrail.by', 'name')
       .populate('sfpTrail.to', 'name');
-
-    // If not found, check if this challan was sent to this user (received challan PDF access)
-    if (!challan) {
-      const user = await User.findById(req.user.id);
-      const company = await Company.findById(req.user.company);
-      const emails = [user?.email, company?.email].filter(Boolean);
-      challan = await Challan.findOne({
-        _id: req.params.id,
-        emailSentTo: { $in: emails }
-      })
-        .populate('party')
-        .populate('company', 'name address phone email gstNumber bankDetails settings logo signature')
-        .populate('createdBy', 'name email')
-        .populate('sfpAssignedTo', 'name email')
-        .populate('sfpTrail.by', 'name')
-        .populate('sfpTrail.to', 'name');
-    }
-
     if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
     res.json({ success: true, data: challan });
   } catch (error) { next(error); }
@@ -188,7 +170,7 @@ export const updateChallan = async (req, res, next) => {
       return res.status(403).json({ success: false, message: `Cannot edit challan with status: ${challan.status}` });
     }
 
-    const { party, challanDate, items, notes, action = 'save' } = req.body;
+    const { party, challanDate, items, notes, action = 'save', challanTemplate } = req.body;
     const { items: processedItems, subtotal, totalGST, grandTotal } = calcTotals(items);
 
     const perms = await getUserPerms(req.user.id, req.user.company);
@@ -204,6 +186,7 @@ export const updateChallan = async (req, res, next) => {
     const updateData = {
       party, challanDate, notes,
       items: processedItems, subtotal, totalGST, grandTotal,
+      ...(challanTemplate !== undefined && { challanTemplate }),
       status: newStatus,
       $push: { sfpTrail: { action: isResend ? 'sent_to_party' : 'edited', by: req.user.id, at: new Date() } }
     };

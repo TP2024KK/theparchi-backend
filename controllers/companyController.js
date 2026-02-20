@@ -33,35 +33,27 @@ export const getCompany = async (req, res, next) => {
  */
 export const updateCompany = async (req, res, next) => {
   try {
-    const allowedUpdates = [
-      'name',
-      'email',
-      'phone',
-      'address',
-      'gstNumber',
-      'pan',
-      'logo',
-      'signature',
-      'bankDetails',
-      'settings',
-      'challanTemplates'
-    ];
+    const company = await Company.findById(req.user.company);
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'Company not found' });
+    }
 
-    const updates = {};
-    Object.keys(req.body).forEach(key => {
-      if (allowedUpdates.includes(key)) {
-        updates[key] = req.body[key];
-      }
-    });
+    // Simple scalar fields
+    const scalarFields = ['name', 'email', 'phone', 'gstNumber', 'pan', 'logo', 'signature'];
+    scalarFields.forEach(f => { if (req.body[f] !== undefined) company[f] = req.body[f]; });
 
-    const company = await Company.findByIdAndUpdate(
-      req.user.company,
-      updates,
-      {
-        new: true,
-        runValidators: true
-      }
-    );
+    // Nested objects
+    if (req.body.address)     company.address     = { ...company.address.toObject(),     ...req.body.address };
+    if (req.body.bankDetails) company.bankDetails = { ...company.bankDetails.toObject(), ...req.body.bankDetails };
+    if (req.body.settings)    company.settings    = { ...company.settings.toObject(),    ...req.body.settings };
+
+    // Arrays - direct replace so Mongoose tracks the change
+    if (req.body.challanTemplates !== undefined) {
+      company.challanTemplates = req.body.challanTemplates;
+      company.markModified('challanTemplates');
+    }
+
+    await company.save();
 
     res.status(200).json({
       success: true,

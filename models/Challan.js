@@ -41,6 +41,7 @@ const challanItemSchema = new mongoose.Schema({
   hsn: String,
   returnedQty: { type: Number, default: 0 },
   inventoryItemId: { type: mongoose.Schema.Types.ObjectId, ref: 'InventoryItem', default: null },
+  customData: { type: mongoose.Schema.Types.Mixed, default: {} },
   marginAccepted: {
     accepted: { type: Boolean, default: false },
     acceptedAt: Date,
@@ -89,6 +90,7 @@ const challanSchema = new mongoose.Schema({
   notes: {
     type: String
   },
+  challanTemplate: { type: mongoose.Schema.Types.ObjectId, default: null },
   status: {
     type: String,
     enum: [
