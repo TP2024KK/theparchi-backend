@@ -41,8 +41,10 @@ export const updateCompany = async (req, res, next) => {
       'gstNumber',
       'pan',
       'logo',
+      'signature',
       'bankDetails',
-      'settings'
+      'settings',
+      'challanTemplates'
     ];
 
     const updates = {};

@@ -45,6 +45,10 @@ const partySchema = new mongoose.Schema({
   notes: {
     type: String
   },
+  challanTemplate: {
+    type: mongoose.Schema.Types.ObjectId,
+    default: null
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
