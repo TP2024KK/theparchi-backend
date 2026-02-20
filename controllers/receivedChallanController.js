@@ -53,6 +53,7 @@ export const acceptReceivedChallan = async (req, res, next) => {
       remarks: remarks || '',
       selfAction: false
     };
+    challan.status = 'accepted';
     await challan.save();
 
     // Notify sender
@@ -204,7 +205,10 @@ export const getReceivedItems = async (req, res, next) => {
 
     const filter = {
       emailSentTo: { $in: emails },
-      status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned'] },
+      $or: [
+        { status: { $in: ['accepted', 'self_accepted', 'partially_returned', 'partially_self_returned'] } },
+        { status: 'sent', 'partyResponse.status': 'accepted' }
+      ]
     };
     if (senderCompany) filter.company = senderCompany;
 
