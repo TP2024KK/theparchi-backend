@@ -22,6 +22,14 @@ import inventoryRoutes from './routes/inventoryRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
 import stockMovementRoutes from './routes/stockMovementRoutes.js';
 
+// Phase 2 — new super admin feature routes
+import auditLogRoutes from './routes/auditLogRoutes.js';
+import healthRoutes from './routes/healthRoutes.js';
+import usageLimitRoutes from './routes/usageLimitRoutes.js';
+
+// Phase 2 — system health tracking service
+import { requestTracker, startHealthCron } from './services/systemHealth.service.js';
+
 const app = express();
 
 // Security middleware
@@ -40,16 +48,12 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
-    // Allow requests with no origin (mobile apps, Postman, curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    // Also allow any onrender.com or vercel.app domain
+    if (allowedOrigins.includes(origin)) return callback(null, true);
     if (origin.includes('onrender.com') || origin.includes('vercel.app') || origin.includes('netlify.app')) {
       return callback(null, true);
     }
-    return callback(null, true); // Allow all for now during development
+    return callback(null, true);
   },
   credentials: true
 }));
@@ -58,6 +62,9 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Phase 2 — passive request tracker for health metrics (no side effects on any route)
+app.use(requestTracker);
+
 // Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
@@ -65,11 +72,10 @@ if (process.env.NODE_ENV === 'development') {
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 100,
   message: 'Too many requests from this IP, please try again later.'
 });
-
 app.use('/api/', limiter);
 
 // Health check
@@ -81,7 +87,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// API Routes
+// ── Existing API Routes ───────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/challans', challanRoutes);
 app.use('/api/return-challans', returnChallanRoutes);
@@ -97,6 +103,14 @@ app.use('/api/challan-notes', challanNoteRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/stock-movements', stockMovementRoutes);
+
+// ── Phase 2 API Routes ────────────────────────────────────────────────────────
+app.use('/api/superadmin/audit-logs', auditLogRoutes);
+app.use('/api/superadmin/health', healthRoutes);
+app.use('/api/superadmin/usage-limits', usageLimitRoutes);
+
+// Phase 2 — start saving health snapshots every 60s
+startHealthCron();
 
 // 404 handler
 app.use('*', (req, res) => {
