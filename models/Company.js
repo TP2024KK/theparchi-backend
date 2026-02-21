@@ -69,21 +69,71 @@ const companySchema = new mongoose.Schema({
   },
 
   subscription: {
-    plan: { type: String, enum: ['free', 'starter', 'growth', 'enterprise'], default: 'free' },
-    status: { type: String, enum: ['active', 'suspended', 'cancelled', 'trial'], default: 'active' },
+    // Updated plan names: free / growth / pro
+    plan: {
+      type: String,
+      enum: ['free', 'growth', 'pro'],
+      default: 'free',
+    },
+    status: {
+      type: String,
+      enum: ['active', 'grace_period', 'suspended', 'cancelled', 'trial'],
+      default: 'active',
+    },
+    billingCycle: {
+      type: String,
+      enum: ['monthly', 'yearly'],
+      default: 'monthly',
+    },
     startDate: { type: Date, default: Date.now },
-    endDate: Date,
-    billingCycle: { type: String, enum: ['monthly', 'yearly'], default: 'monthly' },
+    endDate: Date,                   // when current paid period ends
     nextBillingDate: Date,
-    price: { type: Number, default: 0 },
+    graceEndDate: Date,              // endDate + 7 days — read-only after this
+
+    // Pricing snapshot at time of purchase (base, before GST)
+    basePrice: { type: Number, default: 0 },
+    gstAmount: { type: Number, default: 0 },
+    totalPrice: { type: Number, default: 0 },
+
+    // Payment gateway fields (Razorpay — keys added via super admin panel)
+    razorpaySubscriptionId: String,
+    razorpayCustomerId: String,
+    lastPaymentId: String,
+    lastPaymentDate: Date,
+    lastPaymentStatus: {
+      type: String,
+      enum: ['pending', 'success', 'failed', 'refunded'],
+    },
+
+    // Manual override by super admin
+    manuallyManagedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    manualNote: String,
   },
 
+  // Billing info — company fills this for GST invoice
+  billingInfo: {
+    legalName: String,
+    gstNumber: String,
+    address: {
+      line1: String, line2: String, city: String,
+      state: String, pincode: String,
+    },
+    wantsGstInvoice: { type: Boolean, default: false },
+  },
+
+  // Flat limits copied from plan at subscription time
+  // Super admin can override these individually
   limits: {
     maxUsers: { type: Number, default: 1 },
-    maxChallansPerMonth: { type: Number, default: 25 },
-    maxStorageMB: { type: Number, default: 100 },
+    maxChallansPerMonth: { type: Number, default: 30 },
+    maxStorageMB: { type: Number, default: 200 },
+    maxParties: { type: Number, default: 20 },
+    maxInventoryItems: { type: Number, default: 50 },
+    maxWarehouses: { type: Number, default: 1 },
+    maxTemplates: { type: Number, default: 1 },
   },
 
+  // Running usage counters — reset monthly by cron
   usage: {
     currentUsers: { type: Number, default: 0 },
     challansThisMonth: { type: Number, default: 0 },
@@ -91,13 +141,41 @@ const companySchema = new mongoose.Schema({
     lastResetDate: { type: Date, default: Date.now },
   },
 
+  // WhatsApp credit wallet
+  whatsapp: {
+    credits: { type: Number, default: 0 },
+    totalPurchased: { type: Number, default: 0 },
+    totalUsed: { type: Number, default: 0 },
+    lastPurchaseDate: Date,
+  },
+
   suspensionReason: String,
   registeredAt: { type: Date, default: Date.now },
   lastLoginAt: Date,
 
   owner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
-  isActive: { type: Boolean, default: true }
+  isActive: { type: Boolean, default: true },
 }, { timestamps: true });
+
+// ─── Indexes ──────────────────────────────────────────────────────────────────
+companySchema.index({ 'subscription.plan': 1 });
+companySchema.index({ 'subscription.status': 1 });
+companySchema.index({ 'subscription.endDate': 1 });
+
+// ─── Virtual: is subscription currently usable ────────────────────────────────
+companySchema.virtual('canOperate').get(function () {
+  const s = this.subscription;
+  if (s.plan === 'free') return true;
+  if (s.status === 'active') return true;
+  if (s.status === 'grace_period' && s.graceEndDate > new Date()) return true;
+  return false;
+});
+
+// ─── Virtual: is in grace period ─────────────────────────────────────────────
+companySchema.virtual('inGracePeriod').get(function () {
+  const s = this.subscription;
+  return s.status === 'grace_period' && s.graceEndDate > new Date();
+});
 
 const Company = mongoose.model('Company', companySchema);
 export default Company;

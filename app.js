@@ -5,7 +5,7 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import errorHandler from './middleware/errorHandler.js';
 
-// Import routes
+// Existing routes
 import authRoutes from './routes/authRoutes.js';
 import challanRoutes from './routes/challanRoutes.js';
 import returnChallanRoutes from './routes/returnChallanRoutes.js';
@@ -22,23 +22,24 @@ import inventoryRoutes from './routes/inventoryRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
 import stockMovementRoutes from './routes/stockMovementRoutes.js';
 
-// Phase 2 — new super admin feature routes
+// Phase 2 — super admin features
 import auditLogRoutes from './routes/auditLogRoutes.js';
 import healthRoutes from './routes/healthRoutes.js';
 import usageLimitRoutes from './routes/usageLimitRoutes.js';
 
-// Phase 2 — system health tracking service
+// Phase 3 — subscriptions
+import subscriptionRoutes from './routes/subscriptionRoutes.js';
+import superAdminBillingRoutes from './routes/superAdminBillingRoutes.js';
+
+// Services
 import { requestTracker, startHealthCron } from './services/systemHealth.service.js';
+import { startSubscriptionCron } from './services/subscriptionCron.service.js';
 
 const app = express();
 
-// Security middleware
 app.use(helmet());
-
-// Trust proxy - required for Render.com (fixes express-rate-limit X-Forwarded-For warning)
 app.set('trust proxy', 1);
 
-// CORS - Allow multiple origins
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -58,19 +59,19 @@ app.use(cors({
   credentials: true
 }));
 
-// Body parser
+// Raw body needed for Razorpay webhook signature verification
+app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
+
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Phase 2 — passive request tracker for health metrics (no side effects on any route)
+// Phase 2 — request tracker
 app.use(requestTracker);
 
-// Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
-// Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
@@ -78,7 +79,6 @@ const limiter = rateLimit({
 });
 app.use('/api/', limiter);
 
-// Health check
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -87,7 +87,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ── Existing API Routes ───────────────────────────────────────────────────────
+// ── Existing Routes ───────────────────────────────────────────────────────────
 app.use('/api/auth', authRoutes);
 app.use('/api/challans', challanRoutes);
 app.use('/api/return-challans', returnChallanRoutes);
@@ -104,23 +104,24 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/stock-movements', stockMovementRoutes);
 
-// ── Phase 2 API Routes ────────────────────────────────────────────────────────
+// ── Phase 2 Routes ────────────────────────────────────────────────────────────
 app.use('/api/superadmin/audit-logs', auditLogRoutes);
 app.use('/api/superadmin/health', healthRoutes);
 app.use('/api/superadmin/usage-limits', usageLimitRoutes);
 
-// Phase 2 — start saving health snapshots every 60s
-startHealthCron();
+// ── Phase 3 Routes ────────────────────────────────────────────────────────────
+app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/superadmin/billing', superAdminBillingRoutes);
 
-// 404 handler
+// ── Start background services ─────────────────────────────────────────────────
+startHealthCron();         // collect health snapshot every 60s
+startSubscriptionCron();   // check expired subscriptions daily
+
+// 404
 app.use('*', (req, res) => {
-  res.status(404).json({
-    success: false,
-    message: `Route ${req.originalUrl} not found`
-  });
+  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
 });
 
-// Error handler (must be last)
 app.use(errorHandler);
 
 export default app;
