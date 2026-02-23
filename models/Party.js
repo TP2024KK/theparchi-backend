@@ -49,6 +49,12 @@ const partySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     default: null
   },
+  partyCode: {
+    type: String,
+    trim: true,
+    uppercase: true,
+    index: true
+  },
   createdBy: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
@@ -59,6 +65,7 @@ const partySchema = new mongoose.Schema({
 
 // Index for faster queries
 partySchema.index({ company: 1, name: 1 });
+partySchema.index({ company: 1, partyCode: 1 }, { unique: true, sparse: true });
 
 const Party = mongoose.model('Party', partySchema);
 

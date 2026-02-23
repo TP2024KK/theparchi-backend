@@ -7,8 +7,31 @@ import Party from '../models/Party.js';
  */
 export const createParty = async (req, res, next) => {
   try {
+    let partyCode = (req.body.partyCode || '').trim().toUpperCase();
+
+    // Auto-generate partyCode if not provided
+    if (!partyCode) {
+      const lastParty = await Party.findOne({ company: req.user.company, partyCode: { $exists: true, $ne: null } })
+        .sort({ createdAt: -1 })
+        .select('partyCode');
+      let nextNum = 1;
+      if (lastParty?.partyCode) {
+        const match = lastParty.partyCode.match(/\d+$/);
+        if (match) nextNum = parseInt(match[0]) + 1;
+      }
+      partyCode = `P${String(nextNum).padStart(3, '0')}`;
+    }
+
+    // Ensure uniqueness within company
+    const existing = await Party.findOne({ company: req.user.company, partyCode });
+    if (existing) {
+      // append random suffix if clash
+      partyCode = partyCode + Math.floor(Math.random() * 90 + 10);
+    }
+
     const partyData = {
       ...req.body,
+      partyCode,
       company: req.user.company,
       createdBy: req.user.id
     };
