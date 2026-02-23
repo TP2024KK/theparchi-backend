@@ -435,3 +435,23 @@ export const fixChallanStatuses = async (req, res, next) => {
     res.json({ success: true, message: 'Statuses fixed!', fixed: { accepted: r1.modifiedCount, rejected: r2.modifiedCount, selfAccepted: r3.modifiedCount } });
   } catch (error) { next(error); }
 };
+
+// @desc  Get any sent challan for viewing (used by receiver side PDF)
+// @route GET /api/challans/:id/view
+// @access Protected - any authenticated user who has the challan ID
+export const getChallanForViewer = async (req, res, next) => {
+  try {
+    const challan = await Challan.findOne({
+      _id: req.params.id,
+      status: { $in: ['sent', 'accepted', 'self_accepted', 'rejected', 'returned', 'partially_self_returned', 'self_returned'] }
+    })
+      .populate('party')
+      .populate('company', 'name address phone email gstin logo settings')
+      .populate('createdBy', 'name email')
+      .populate('sfpTrail.by', 'name')
+      .populate('sfpTrail.to', 'name');
+
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found or not accessible' });
+    res.json({ success: true, data: challan });
+  } catch (error) { next(error); }
+};
