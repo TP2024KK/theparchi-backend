@@ -4,6 +4,27 @@ import { generateToken } from '../utils/jwt.js';
 import { generateOTP, getOTPExpiry, isOTPValid } from '../utils/otp.js';
 import { sendPasswordResetEmail, sendWelcomeEmail } from '../utils/email.js';
 
+// Generate a unique challan prefix from company name
+// e.g. "Sharma Traders" -> "ST", if taken -> "ST1", "ST2" etc.
+const generateUniquePrefix = async (companyName) => {
+  // Take first letter of each word, max 4 chars, uppercase
+  const words = companyName.trim().split(/\s+/);
+  let base = words.map(w => w[0]).join('').toUpperCase().slice(0, 4);
+  if (!base) base = 'CH';
+
+  // Check if this prefix is already used by another company
+  let prefix = base;
+  let counter = 1;
+  while (true) {
+    const existing = await Company.findOne({ 'settings.challanPrefix': prefix });
+    if (!existing) break;
+    prefix = `${base}${counter}`;
+    counter++;
+  }
+  return prefix;
+};
+
+
 /**
  * @desc    Register new company and owner
  * @route   POST /api/auth/signup
@@ -22,12 +43,14 @@ export const signup = async (req, res, next) => {
       });
     }
 
-    // Create company first
+    // Create company first with a unique challan prefix based on company name
+    const challanPrefix = await generateUniquePrefix(companyName);
     const company = await Company.create({
       name: companyName,
       email: email,
       phone: phone,
-      owner: null // Will update after creating user
+      owner: null, // Will update after creating user
+      settings: { challanPrefix }
     });
 
     // Create owner user
