@@ -4,7 +4,6 @@ import Party from '../models/Party.js';
 import InventoryItem from '../models/InventoryItem.js';
 import { deductStockForChallan } from './inventoryController.js';
 import crypto from 'crypto';
-import { parse } from 'csv-parse/sync';
 
 // Helper: calculate totals
 const calcTotals = (items) => {
