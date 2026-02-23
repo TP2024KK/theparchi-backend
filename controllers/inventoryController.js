@@ -105,9 +105,12 @@ export const createInventoryItem = async (req, res, next) => {
     const existing = await InventoryItem.findOne({ company: req.user.company, sku });
     if (existing) return res.status(400).json({ success: false, message: `SKU "${sku}" already exists` });
 
+    // Generate unique barcodeId: companyId-SKU (guaranteed unique across all companies)
+    const barcodeId = `${req.user.company}-${sku}`;
+
     const item = await InventoryItem.create({
       company: req.user.company,
-      name, sku, category, description, unit: unit || 'pcs',
+      name, sku, barcodeId, category, description, unit: unit || 'pcs',
       hsnCode, reorderPoint: reorderPoint || 0,
       reorderQuantity: reorderQuantity || 0,
       purchasePrice: purchasePrice || 0,
@@ -281,4 +284,19 @@ export const addStockForReturn = async ({ companyId, userId, returnChallanId, it
       console.error('Stock return error for item:', item.inventoryItemId, err.message);
     }
   }
+};
+
+// GET /api/inventory/scan/:barcodeId  - look up item by barcode for scanner
+export const getItemByBarcode = async (req, res, next) => {
+  try {
+    const { barcodeId } = req.params;
+    const item = await InventoryItem.findOne({
+      barcodeId,
+      company: req.user.company,
+      isActive: true
+    }).select('name sku unit currentStock sellingPrice purchasePrice hsnCode barcodeId');
+
+    if (!item) return res.status(404).json({ success: false, message: 'Item not found for this barcode' });
+    res.json({ success: true, data: item });
+  } catch (error) { next(error); }
 };

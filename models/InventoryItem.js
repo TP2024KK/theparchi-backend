@@ -58,6 +58,11 @@ const inventoryItemSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
+  barcodeId: {
+    type: String,
+    trim: true,
+    index: true
+  },
   notes: String,
   isActive: {
     type: Boolean,
