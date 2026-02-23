@@ -300,3 +300,23 @@ export const getItemByBarcode = async (req, res, next) => {
     res.json({ success: true, data: item });
   } catch (error) { next(error); }
 };
+
+// POST /api/inventory/backfill-barcodes
+// One-time script to add barcodeId to existing items that don't have one
+export const backfillBarcodeIds = async (req, res, next) => {
+  try {
+    const items = await InventoryItem.find({
+      company: req.user.company,
+      $or: [{ barcodeId: { $exists: false } }, { barcodeId: null }, { barcodeId: '' }]
+    });
+
+    let updated = 0;
+    for (const item of items) {
+      const barcodeId = `${item.company}-${item.sku}`;
+      await InventoryItem.updateOne({ _id: item._id }, { $set: { barcodeId } });
+      updated++;
+    }
+
+    res.json({ success: true, message: `Updated ${updated} items with barcodeId`, updated });
+  } catch (error) { next(error); }
+};

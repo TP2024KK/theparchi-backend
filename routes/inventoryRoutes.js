@@ -2,7 +2,7 @@ import express from 'express';
 import {
   getInventoryItems, searchInventoryItems, getInventoryItem,
   createInventoryItem, updateInventoryItem, deleteInventoryItem,
-  adjustStock, getItemMovements, getItemByBarcode
+  adjustStock, getItemMovements, getItemByBarcode, backfillBarcodeIds
 } from '../controllers/inventoryController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -10,6 +10,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get('/search', searchInventoryItems);
+router.post('/backfill-barcodes', backfillBarcodeIds);
 router.route('/').get(getInventoryItems).post(createInventoryItem);
 router.get('/scan/:barcodeId', getItemByBarcode);
 router.route('/:id').get(getInventoryItem).put(updateInventoryItem).delete(deleteInventoryItem);
