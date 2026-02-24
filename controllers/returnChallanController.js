@@ -92,7 +92,11 @@ export const createReturnChallan = async (req, res, next) => {
 
     // Generate number
     const company = await Company.findById(req.user.company);
-    const prefix = company.settings?.returnChallanPrefix || 'RCH';
+    // Use challanPrefix as base for return prefix to ensure cross-company uniqueness
+    // e.g. if challanPrefix is 'ABC', returnChallanPrefix becomes 'ABC-R'
+    const challanPrefix = company.settings?.challanPrefix || '';
+    const defaultReturnPrefix = challanPrefix ? `${challanPrefix}-R` : 'RCH';
+    const prefix = company.settings?.returnChallanPrefix || defaultReturnPrefix;
     const nextNum = company.settings?.nextReturnChallanNumber || 1;
     const returnChallanNumber = `${prefix}-${nextNum}`;
 
