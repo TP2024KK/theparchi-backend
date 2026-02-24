@@ -18,6 +18,7 @@ const challanTemplateSchema = new mongoose.Schema({
 const companySchema = new mongoose.Schema({
   name: { type: String, required: [true, 'Company name is required'], trim: true },
   email: { type: String, lowercase: true, trim: true },
+  companyCode: { type: String, trim: true, uppercase: true, unique: true, sparse: true },
   phone: { type: String, trim: true },
   address: {
     line1: String, line2: String, city: String,
@@ -62,10 +63,14 @@ const companySchema = new mongoose.Schema({
     signatureType: { type: String, enum: ['computer_generated', 'uploaded'], default: 'computer_generated' },
     termsAndConditions: { type: String, default: '' },
     showComputerGeneratedLine: { type: Boolean, default: true },
-    barcodeEnabled: { type: Boolean, default: false },
+    challanPrefixes: [{
+      name: { type: String, trim: true, uppercase: true },
+      counter: { type: Number, default: 1 },
+      label: { type: String, trim: true }  // display label e.g. "Loom Orders"
+    }],
     partyPrefixRules: [{
       party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party' },
-      prefix: String
+      prefix: String   // matches challanPrefixes.name or empty = default
     }]
   },
 

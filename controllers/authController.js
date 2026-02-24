@@ -52,6 +52,7 @@ export const signup = async (req, res, next) => {
     // Append last 3 digits of company._id to ensure uniqueness
     const idSuffix = company._id.toString().slice(-3).toUpperCase();
     const uniquePrefix = `${initials}${idSuffix}`;
+    company.companyCode = uniquePrefix;  // e.g. KD4A2 - used for party linking
     company.settings = {
       ...company.settings,
       challanPrefix: uniquePrefix,

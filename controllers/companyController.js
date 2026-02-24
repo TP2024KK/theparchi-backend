@@ -109,3 +109,109 @@ export const updateSettings = async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * @desc    Lookup company by code (for linking parties)
+ * @route   GET /api/company/lookup/:code
+ * @access  Private
+ */
+export const lookupByCode = async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toUpperCase();
+    const company = await Company.findOne({ companyCode: code })
+      .select('name email phone gstNumber address companyCode');
+
+    if (!company) {
+      return res.status(404).json({ success: false, message: 'No company found with this code' });
+    }
+
+    // Don't return your own company
+    if (company._id.toString() === req.user.company.toString()) {
+      return res.status(400).json({ success: false, message: 'This is your own company code' });
+    }
+
+    res.status(200).json({ success: true, data: company });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Add or update a challan prefix
+ * @route   POST /api/company/prefixes
+ * @access  Private (Owner/Admin)
+ */
+export const addPrefix = async (req, res, next) => {
+  try {
+    const { name, label } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Prefix name is required' });
+
+    const company = await Company.findById(req.user.company);
+    const prefixes = company.settings.challanPrefixes || [];
+
+    // Check if prefix name already exists
+    if (prefixes.find(p => p.name === name.toUpperCase())) {
+      return res.status(400).json({ success: false, message: 'Prefix already exists' });
+    }
+
+    prefixes.push({ name: name.toUpperCase(), label: label || name, counter: 1 });
+    company.settings.challanPrefixes = prefixes;
+    company.markModified('settings');
+    await company.save();
+
+    res.status(201).json({ success: true, data: company.settings.challanPrefixes, message: `Prefix ${name.toUpperCase()} added` });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Delete a challan prefix
+ * @route   DELETE /api/company/prefixes/:name
+ * @access  Private (Owner/Admin)
+ */
+export const deletePrefix = async (req, res, next) => {
+  try {
+    const name = req.params.name.toUpperCase();
+    const company = await Company.findById(req.user.company);
+    const prefixes = company.settings.challanPrefixes || [];
+
+    company.settings.challanPrefixes = prefixes.filter(p => p.name !== name);
+    company.markModified('settings');
+    await company.save();
+
+    res.status(200).json({ success: true, message: `Prefix ${name} deleted` });
+  } catch (error) {
+    next(error);
+  }
+};
+
+/**
+ * @desc    Assign prefix to a party
+ * @route   PUT /api/company/party-prefix
+ * @access  Private (Owner/Admin)
+ */
+export const assignPartyPrefix = async (req, res, next) => {
+  try {
+    const { partyId, prefix } = req.body; // prefix = '' means use default
+    const company = await Company.findById(req.user.company);
+    const rules = company.settings.partyPrefixRules || [];
+
+    const existing = rules.findIndex(r => r.party?.toString() === partyId);
+    if (prefix === '' || prefix === null) {
+      // Remove rule (use default)
+      if (existing > -1) rules.splice(existing, 1);
+    } else {
+      if (existing > -1) rules[existing].prefix = prefix;
+      else rules.push({ party: partyId, prefix });
+    }
+
+    company.settings.partyPrefixRules = rules;
+    company.markModified('settings');
+    await company.save();
+
+    res.status(200).json({ success: true, message: 'Party prefix updated' });
+  } catch (error) {
+    next(error);
+  }
+};

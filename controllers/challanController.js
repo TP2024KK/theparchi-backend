@@ -51,7 +51,24 @@ export const createChallan = async (req, res, next) => {
     }
 
     const company = await Company.findById(req.user.company);
-    const challanNumber = `${company.settings.challanPrefix}-${company.settings.nextChallanNumber}`;
+
+    // Determine prefix: check if party has an assigned prefix, else use default
+    let activePrefix = company.settings.challanPrefix;
+    let activeCounter = company.settings.nextChallanNumber;
+
+    const partyRule = (company.settings.partyPrefixRules || [])
+      .find(r => r.party?.toString() === party?.toString());
+
+    if (partyRule?.prefix) {
+      const prefixObj = (company.settings.challanPrefixes || [])
+        .find(p => p.name === partyRule.prefix);
+      if (prefixObj) {
+        activePrefix = prefixObj.name;
+        activeCounter = prefixObj.counter;
+      }
+    }
+
+    const challanNumber = `${activePrefix}-${activeCounter}`;
     const { items: processedItems, subtotal, totalGST, grandTotal } = calcTotals(items);
 
     let status = action === 'draft' ? 'draft' : action === 'send' ? 'sent' : 'created';
@@ -90,8 +107,23 @@ export const createChallan = async (req, res, next) => {
     }
 
     const challan = await Challan.create(challanData);
-    company.settings.nextChallanNumber += 1;
-    await Company.updateOne({ _id: company._id }, { 'settings.nextChallanNumber': company.settings.nextChallanNumber });
+    // Increment the correct counter
+    const partyRuleForIncrement = (company.settings.partyPrefixRules || [])
+      .find(r => r.party?.toString() === party?.toString());
+
+    if (partyRuleForIncrement?.prefix) {
+      const prefixIdx = (company.settings.challanPrefixes || [])
+        .findIndex(p => p.name === partyRuleForIncrement.prefix);
+      if (prefixIdx > -1) {
+        await Company.updateOne(
+          { _id: company._id },
+          { $inc: { [`settings.challanPrefixes.${prefixIdx}.counter`]: 1 } }
+        );
+      }
+    } else {
+      company.settings.nextChallanNumber += 1;
+      await Company.updateOne({ _id: company._id }, { 'settings.nextChallanNumber': company.settings.nextChallanNumber });
+    }
 
     await challan.populate('party');
     await challan.populate('createdBy', 'name email');
@@ -433,25 +465,5 @@ export const fixChallanStatuses = async (req, res, next) => {
     );
 
     res.json({ success: true, message: 'Statuses fixed!', fixed: { accepted: r1.modifiedCount, rejected: r2.modifiedCount, selfAccepted: r3.modifiedCount } });
-  } catch (error) { next(error); }
-};
-
-// @desc  Get any sent challan for viewing (used by receiver side PDF)
-// @route GET /api/challans/:id/view
-// @access Protected - any authenticated user who has the challan ID
-export const getChallanForViewer = async (req, res, next) => {
-  try {
-    const challan = await Challan.findOne({
-      _id: req.params.id,
-      status: { $in: ['sent', 'accepted', 'self_accepted', 'rejected', 'returned', 'partially_self_returned', 'self_returned'] }
-    })
-      .populate('party')
-      .populate('company', 'name address phone email gstin logo settings')
-      .populate('createdBy', 'name email')
-      .populate('sfpTrail.by', 'name')
-      .populate('sfpTrail.to', 'name');
-
-    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found or not accessible' });
-    res.json({ success: true, data: challan });
   } catch (error) { next(error); }
 };

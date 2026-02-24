@@ -1,8 +1,7 @@
 import express from 'express';
 import {
-  getCompany,
-  updateCompany,
-  updateSettings
+  getCompany, updateCompany, updateSettings,
+  lookupByCode, addPrefix, deletePrefix, assignPartyPrefix
 } from '../controllers/companyController.js';
 import { protect, restrictTo } from '../middleware/auth.js';
 import PaymentGatewayConfig from '../models/PaymentGatewayConfig.js';
@@ -42,5 +41,13 @@ router.get('/payment-config', async (req, res) => {
     res.status(500).json({ success: false, message: err.message });
   }
 });
+
+// Company code lookup (for linking parties)
+router.get('/lookup/:code', lookupByCode);
+
+// Challan prefix management
+router.post('/prefixes', restrictTo('owner', 'admin'), addPrefix);
+router.delete('/prefixes/:name', restrictTo('owner', 'admin'), deletePrefix);
+router.put('/party-prefix', restrictTo('owner', 'admin'), assignPartyPrefix);
 
 export default router;

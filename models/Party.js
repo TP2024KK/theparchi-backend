@@ -49,6 +49,11 @@ const partySchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     default: null
   },
+  assignedPrefix: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   partyCode: {
     type: String,
     trim: true,
