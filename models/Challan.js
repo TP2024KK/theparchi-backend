@@ -59,8 +59,7 @@ const challanSchema = new mongoose.Schema({
   },
   challanNumber: {
     type: String,
-    required: true,
-    unique: true
+    required: true
   },
   party: {
     type: mongoose.Schema.Types.ObjectId,
@@ -161,7 +160,7 @@ const challanSchema = new mongoose.Schema({
 });
 
 // Index for faster queries
-challanSchema.index({ company: 1, challanNumber: 1 });
+challanSchema.index({ company: 1, challanNumber: 1 }, { unique: true });
 challanSchema.index({ company: 1, party: 1 });
 challanSchema.index({ company: 1, challanDate: -1 });
 

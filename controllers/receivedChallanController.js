@@ -137,7 +137,9 @@ export const createReceiverReturnChallan = async (req, res, next) => {
 
     // Use sender company's return challan numbering
     const senderCompany = await Company.findById(challan.company._id);
-    const prefix = senderCompany.settings?.returnChallanPrefix || 'RCH';
+    const senderChallanPrefix = senderCompany.settings?.challanPrefix || '';
+    const defaultReturnPrefix = senderChallanPrefix ? `${senderChallanPrefix}-R` : 'RCH';
+    const prefix = senderCompany.settings?.returnChallanPrefix || defaultReturnPrefix;
     const nextNum = senderCompany.settings?.nextReturnChallanNumber || 1;
     const returnChallanNumber = `${prefix}-${nextNum}`;
 
@@ -307,7 +309,9 @@ export const createMultiChallanReturn = async (req, res, next) => {
     }
 
     // Generate return challan number using sender's prefix
-    const prefix = senderCompany.settings?.returnChallanPrefix || 'RCH';
+    const senderChallanPrefix = senderCompany.settings?.challanPrefix || '';
+    const defaultReturnPrefix = senderChallanPrefix ? `${senderChallanPrefix}-R` : 'RCH';
+    const prefix = senderCompany.settings?.returnChallanPrefix || defaultReturnPrefix;
     const nextNum = senderCompany.settings?.nextReturnChallanNumber || 1;
     const returnChallanNumber = `${prefix}-${nextNum}`;
 

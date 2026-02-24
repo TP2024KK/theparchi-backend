@@ -17,7 +17,7 @@ const returnItemSchema = new mongoose.Schema({
 
 const returnChallanSchema = new mongoose.Schema({
   company: { type: mongoose.Schema.Types.ObjectId, ref: 'Company', required: true },
-  returnChallanNumber: { type: String, required: true, unique: true },
+  returnChallanNumber: { type: String, required: true },
   originalChallan: { type: mongoose.Schema.Types.ObjectId, ref: 'Challan' }, // primary challan (optional, for backward compat)
   party: { type: mongoose.Schema.Types.ObjectId, ref: 'Party', default: null },
   returnDate: { type: Date, default: Date.now },
@@ -46,6 +46,8 @@ const returnChallanSchema = new mongoose.Schema({
     remarks: String
   }
 }, { timestamps: true });
+
+returnChallanSchema.index({ company: 1, returnChallanNumber: 1 }, { unique: true });
 
 const ReturnChallan = mongoose.model('ReturnChallan', returnChallanSchema);
 export default ReturnChallan;
