@@ -248,3 +248,134 @@ export const getGrowthData = async (req, res, next) => {
     res.json({ success: true, data });
   } catch (error) { next(error); }
 };
+
+// ── Maintenance Scripts ───────────────────────────────────────────────────────
+export const runMaintenanceScript = async (req, res, next) => {
+  try {
+    const { scriptId } = req.params;
+
+    if (scriptId === 'fix_company_codes') {
+      const result = await fixCompanyCodes();
+      return res.json(result);
+    }
+    if (scriptId === 'fix_challan_prefixes') {
+      const result = await fixChallanPrefixes();
+      return res.json(result);
+    }
+    if (scriptId === 'fix_return_prefixes') {
+      const result = await fixReturnPrefixes();
+      return res.json(result);
+    }
+    if (scriptId === 'fix_all_legacy') {
+      const r1 = await fixCompanyCodes();
+      const r2 = await fixChallanPrefixes();
+      const r3 = await fixReturnPrefixes();
+      const details = [...r1.details, ...r2.details, ...r3.details];
+      return res.json({
+        success: true,
+        message: `All legacy fixes complete. ${details.length} updates made across all scripts.`,
+        details
+      });
+    }
+
+    return res.status(400).json({ success: false, message: 'Unknown script ID' });
+  } catch (error) { next(error); }
+};
+
+// ── Helper: generate unique prefix from company name + id ────────────────────
+function generatePrefix(name, id) {
+  const idSuffix = id.toString().slice(-3).toUpperCase();
+  const initials = (name || 'CO')
+    .replace(/[^a-zA-Z\s]/g, '')
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(w => w[0].toUpperCase())
+    .join('')
+    .slice(0, 4) || 'CO';
+  return `${initials}${idSuffix}`;
+}
+
+// ── Script 1: Fix Company Codes ───────────────────────────────────────────────
+async function fixCompanyCodes() {
+  const companies = await Company.find({ $or: [{ companyCode: { $exists: false } }, { companyCode: null }, { companyCode: '' }] });
+  if (companies.length === 0) {
+    return { success: true, message: 'All companies already have company codes. Nothing to update.', details: [] };
+  }
+
+  const details = [];
+  for (const company of companies) {
+    let code = generatePrefix(company.name, company._id);
+    // Ensure uniqueness
+    let exists = await Company.findOne({ companyCode: code, _id: { $ne: company._id } });
+    let attempts = 0;
+    while (exists && attempts < 10) {
+      code = `${code.slice(0, -1)}${attempts}`;
+      exists = await Company.findOne({ companyCode: code, _id: { $ne: company._id } });
+      attempts++;
+    }
+    await Company.updateOne({ _id: company._id }, { $set: { companyCode: code } });
+    details.push(`${company.name} → code: ${code}`);
+  }
+
+  return {
+    success: true,
+    message: `Company codes generated for ${details.length} companies.`,
+    details
+  };
+}
+
+// ── Script 2: Fix Challan Prefixes ────────────────────────────────────────────
+async function fixChallanPrefixes() {
+  const companies = await Company.find({
+    $or: [
+      { 'settings.challanPrefix': 'CH' },
+      { 'settings.challanPrefix': { $exists: false } },
+      { 'settings.challanPrefix': null },
+      { 'settings.challanPrefix': '' }
+    ]
+  });
+  if (companies.length === 0) {
+    return { success: true, message: 'All companies already have unique challan prefixes. Nothing to update.', details: [] };
+  }
+
+  const details = [];
+  for (const company of companies) {
+    const prefix = generatePrefix(company.name, company._id);
+    await Company.updateOne({ _id: company._id }, { $set: { 'settings.challanPrefix': prefix } });
+    details.push(`${company.name} → prefix: ${prefix}`);
+  }
+
+  return {
+    success: true,
+    message: `Challan prefixes fixed for ${details.length} companies.`,
+    details
+  };
+}
+
+// ── Script 3: Fix Return Prefixes ─────────────────────────────────────────────
+async function fixReturnPrefixes() {
+  const companies = await Company.find({
+    $or: [
+      { 'settings.returnChallanPrefix': 'RCH' },
+      { 'settings.returnChallanPrefix': { $exists: false } },
+      { 'settings.returnChallanPrefix': null },
+      { 'settings.returnChallanPrefix': '' }
+    ]
+  });
+  if (companies.length === 0) {
+    return { success: true, message: 'All companies already have unique return prefixes. Nothing to update.', details: [] };
+  }
+
+  const details = [];
+  for (const company of companies) {
+    const prefix = generatePrefix(company.name, company._id) + 'R';
+    await Company.updateOne({ _id: company._id }, { $set: { 'settings.returnChallanPrefix': prefix } });
+    details.push(`${company.name} → return prefix: ${prefix}`);
+  }
+
+  return {
+    success: true,
+    message: `Return prefixes fixed for ${details.length} companies.`,
+    details
+  };
+}
