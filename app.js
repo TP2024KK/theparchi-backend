@@ -5,7 +5,7 @@ import morgan from 'morgan';
 import rateLimit from 'express-rate-limit';
 import errorHandler from './middleware/errorHandler.js';
 
-// Existing routes
+// Import routes
 import authRoutes from './routes/authRoutes.js';
 import challanRoutes from './routes/challanRoutes.js';
 import returnChallanRoutes from './routes/returnChallanRoutes.js';
@@ -21,25 +21,18 @@ import challanNoteRoutes from './routes/challanNoteRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
 import stockMovementRoutes from './routes/stockMovementRoutes.js';
-
-// Phase 2 — super admin features
-import auditLogRoutes from './routes/auditLogRoutes.js';
-import healthRoutes from './routes/healthRoutes.js';
-import usageLimitRoutes from './routes/usageLimitRoutes.js';
-
-// Phase 3 — subscriptions
-import subscriptionRoutes from './routes/subscriptionRoutes.js';
-import superAdminBillingRoutes from './routes/superAdminBillingRoutes.js';
-
-// Services
-import { requestTracker, startHealthCron } from './services/systemHealth.service.js';
-import { startSubscriptionCron } from './services/subscriptionCron.service.js';
+import webhookRoutes from './routes/webhookRoutes.js';
+import whatsappAdminRoutes from './routes/whatsappAdminRoutes.js';
 
 const app = express();
 
+// Security middleware
 app.use(helmet());
+
+// Trust proxy - required for Render.com (fixes express-rate-limit X-Forwarded-For warning)
 app.set('trust proxy', 1);
 
+// CORS - Allow multiple origins
 const allowedOrigins = [
   'http://localhost:5173',
   'http://localhost:3000',
@@ -49,36 +42,39 @@ const allowedOrigins = [
 
 app.use(cors({
   origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, curl)
     if (!origin) return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+    // Also allow any onrender.com or vercel.app domain
     if (origin.includes('onrender.com') || origin.includes('vercel.app') || origin.includes('netlify.app')) {
       return callback(null, true);
     }
-    return callback(null, true);
+    return callback(null, true); // Allow all for now during development
   },
   credentials: true
 }));
 
-// Raw body needed for Razorpay webhook signature verification
-app.use('/api/subscription/webhook', express.raw({ type: 'application/json' }));
-
+// Body parser
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Phase 2 — request tracker
-app.use(requestTracker);
-
+// Logging
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
 }
 
+// Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 100,
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
   message: 'Too many requests from this IP, please try again later.'
 });
+
 app.use('/api/', limiter);
 
+// Health check
 app.get('/health', (req, res) => {
   res.status(200).json({
     success: true,
@@ -87,7 +83,7 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ── Existing Routes ───────────────────────────────────────────────────────────
+// API Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/challans', challanRoutes);
 app.use('/api/return-challans', returnChallanRoutes);
@@ -103,25 +99,18 @@ app.use('/api/challan-notes', challanNoteRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/warehouses', warehouseRoutes);
 app.use('/api/stock-movements', stockMovementRoutes);
+app.use('/api/webhook', webhookRoutes);
+app.use('/api/superadmin/whatsapp', whatsappAdminRoutes);
 
-// ── Phase 2 Routes ────────────────────────────────────────────────────────────
-app.use('/api/superadmin/audit-logs', auditLogRoutes);
-app.use('/api/superadmin/health', healthRoutes);
-app.use('/api/superadmin/usage-limits', usageLimitRoutes);
-
-// ── Phase 3 Routes ────────────────────────────────────────────────────────────
-app.use('/api/subscription', subscriptionRoutes);
-app.use('/api/superadmin/billing', superAdminBillingRoutes);
-
-// ── Start background services ─────────────────────────────────────────────────
-startHealthCron();         // collect health snapshot every 60s
-startSubscriptionCron();   // check expired subscriptions daily
-
-// 404
+// 404 handler
 app.use('*', (req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.originalUrl} not found` });
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.originalUrl} not found`
+  });
 });
 
+// Error handler (must be last)
 app.use(errorHandler);
 
 export default app;

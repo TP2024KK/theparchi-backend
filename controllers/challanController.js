@@ -4,6 +4,7 @@ import Party from '../models/Party.js';
 import User from '../models/User.js';
 import TeamMember from '../models/TeamMember.js';
 import { sendChallanEmail } from '../utils/email.js';
+import { sendChallanWhatsApp } from '../services/whatsappService.js';
 import { createNotification } from '../utils/notify.js';
 import crypto from 'crypto';
 import { deductStockForChallan } from './inventoryController.js';
@@ -51,24 +52,7 @@ export const createChallan = async (req, res, next) => {
     }
 
     const company = await Company.findById(req.user.company);
-
-    // Determine prefix: check if party has an assigned prefix, else use default
-    let activePrefix = company.settings.challanPrefix;
-    let activeCounter = company.settings.nextChallanNumber;
-
-    const partyRule = (company.settings.partyPrefixRules || [])
-      .find(r => r.party?.toString() === party?.toString());
-
-    if (partyRule?.prefix) {
-      const prefixObj = (company.settings.challanPrefixes || [])
-        .find(p => p.name === partyRule.prefix);
-      if (prefixObj) {
-        activePrefix = prefixObj.name;
-        activeCounter = prefixObj.counter;
-      }
-    }
-
-    const challanNumber = `${activePrefix}-${activeCounter}`;
+    const challanNumber = `${company.settings.challanPrefix}-${company.settings.nextChallanNumber}`;
     const { items: processedItems, subtotal, totalGST, grandTotal } = calcTotals(items);
 
     let status = action === 'draft' ? 'draft' : action === 'send' ? 'sent' : 'created';
@@ -107,23 +91,8 @@ export const createChallan = async (req, res, next) => {
     }
 
     const challan = await Challan.create(challanData);
-    // Increment the correct counter
-    const partyRuleForIncrement = (company.settings.partyPrefixRules || [])
-      .find(r => r.party?.toString() === party?.toString());
-
-    if (partyRuleForIncrement?.prefix) {
-      const prefixIdx = (company.settings.challanPrefixes || [])
-        .findIndex(p => p.name === partyRuleForIncrement.prefix);
-      if (prefixIdx > -1) {
-        await Company.updateOne(
-          { _id: company._id },
-          { $inc: { [`settings.challanPrefixes.${prefixIdx}.counter`]: 1 } }
-        );
-      }
-    } else {
-      company.settings.nextChallanNumber += 1;
-      await Company.updateOne({ _id: company._id }, { 'settings.nextChallanNumber': company.settings.nextChallanNumber });
-    }
+    company.settings.nextChallanNumber += 1;
+    await Company.updateOne({ _id: company._id }, { 'settings.nextChallanNumber': company.settings.nextChallanNumber });
 
     await challan.populate('party');
     await challan.populate('createdBy', 'name email');
@@ -306,6 +275,16 @@ export const sendChallan = async (req, res, next) => {
       const updated = await Challan.findById(challan._id).populate('party');
       await Challan.updateOne({ _id: challan._id }, { emailSentTo: challan.party.email });
       sendChallanEmail(updated, challan.party, company, req.user).catch(e => console.error('Email error:', e));
+    }
+
+    // Send WhatsApp if party has phone number
+    if (challan.party?.phone) {
+      sendChallanWhatsApp({
+        challan,
+        party: challan.party,
+        company,
+        publicToken: token
+      }).catch(e => console.error('WhatsApp send error:', e));
     }
 
     // Auto-deduct inventory stock for linked items
