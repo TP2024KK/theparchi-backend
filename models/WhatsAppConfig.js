@@ -6,7 +6,7 @@ const templateSchema = new mongoose.Schema({
     enum: ['challan_sent', 'challan_accepted', 'challan_rejected', 'return_challan_sent', 'payment_received', 'payment_reminder', 'note_added', 'overdue_reminder'],
     required: true
   },
-  templateName: { type: String, default: '' },,
+  templateName: { type: String, default: '' },
   languageCode: { type: String, default: 'en_US' },
   variables: [String], // description of variables e.g. ['party_name', 'challan_number', 'company_name']
   isActive: { type: Boolean, default: true },
