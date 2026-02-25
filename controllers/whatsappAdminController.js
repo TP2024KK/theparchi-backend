@@ -4,22 +4,31 @@ import { sendWhatsAppMessage } from '../services/whatsappService.js';
 // ── Get config ────────────────────────────────────────────────────────────────
 export const getWhatsAppConfig = async (req, res, next) => {
   try {
+    const DEFAULT_TEMPLATES = [
+      { trigger: 'challan_sent', templateName: 'send_document_all', languageCode: 'en_US', variables: ['party_name', 'challan_number', 'company_name'], isActive: true },
+      { trigger: 'challan_accepted', templateName: '', languageCode: 'en_US', variables: ['challan_number', 'party_name'], isActive: false },
+      { trigger: 'challan_rejected', templateName: '', languageCode: 'en_US', variables: ['challan_number', 'party_name', 'reason'], isActive: false },
+      { trigger: 'return_challan_sent', templateName: '', languageCode: 'en_US', variables: ['party_name', 'return_number', 'amount'], isActive: false },
+      { trigger: 'payment_received', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'challan_number'], isActive: false },
+      { trigger: 'payment_reminder', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'due_date'], isActive: false },
+      { trigger: 'note_added', templateName: '', languageCode: 'en_US', variables: ['party_name', 'challan_number', 'note'], isActive: false },
+      { trigger: 'overdue_reminder', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'days_overdue'], isActive: false },
+    ];
+
     let config = await WhatsAppConfig.findOne({});
     if (!config) {
-      // Create default config
-      config = await WhatsAppConfig.create({
-        isActive: false,
-        templates: [
-          { trigger: 'challan_sent', templateName: 'send_document_all', languageCode: 'en_US', variables: ['party_name', 'challan_number', 'company_name'], isActive: true },
-          { trigger: 'challan_accepted', templateName: '', languageCode: 'en_US', variables: ['challan_number', 'party_name'], isActive: false },
-          { trigger: 'challan_rejected', templateName: '', languageCode: 'en_US', variables: ['challan_number', 'party_name', 'reason'], isActive: false },
-          { trigger: 'return_challan_sent', templateName: '', languageCode: 'en_US', variables: ['party_name', 'return_number', 'amount'], isActive: false },
-          { trigger: 'payment_received', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'challan_number'], isActive: false },
-          { trigger: 'payment_reminder', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'due_date'], isActive: false },
-          { trigger: 'note_added', templateName: '', languageCode: 'en_US', variables: ['party_name', 'challan_number', 'note'], isActive: false },
-          { trigger: 'overdue_reminder', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'days_overdue'], isActive: false },
-        ]
-      });
+      config = await WhatsAppConfig.create({ isActive: false, templates: DEFAULT_TEMPLATES });
+    } else {
+      // Ensure all default triggers exist — add any missing ones
+      let changed = false;
+      for (const def of DEFAULT_TEMPLATES) {
+        const exists = config.templates.find(t => t.trigger === def.trigger);
+        if (!exists) {
+          config.templates.push(def);
+          changed = true;
+        }
+      }
+      if (changed) await config.save();
     }
     // Mask access token for display
     const configObj = config.toObject();
