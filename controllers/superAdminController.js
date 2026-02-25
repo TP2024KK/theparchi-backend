@@ -1,4 +1,5 @@
 import Company from '../models/Company.js';
+import WhatsAppConfig from '../models/WhatsAppConfig.js';
 import User from '../models/User.js';
 import Challan from '../models/Challan.js';
 import { PLANS } from '../config/plans.js';
@@ -266,6 +267,10 @@ export const runMaintenanceScript = async (req, res, next) => {
       const result = await fixReturnPrefixes();
       return res.json(result);
     }
+    if (scriptId === 'seed_whatsapp_templates') {
+      const result = await seedWhatsAppTemplates();
+      return res.json(result);
+    }
     if (scriptId === 'fix_all_legacy') {
       const r1 = await fixCompanyCodes();
       const r2 = await fixChallanPrefixes();
@@ -293,6 +298,46 @@ function generatePrefix(name, id) {
     .join('')
     .slice(0, 4) || 'CO';
   return `${initials}${idSuffix}`;
+}
+
+// ── Script: Seed WhatsApp Templates ──────────────────────────────────────────
+async function seedWhatsAppTemplates() {
+  const DEFAULT_TEMPLATES = [
+    { trigger: 'challan_sent', templateName: 'send_document_all', languageCode: 'en_US', variables: ['party_name', 'challan_number', 'company_name'], isActive: true },
+    { trigger: 'challan_accepted', templateName: '', languageCode: 'en_US', variables: ['challan_number', 'party_name'], isActive: false },
+    { trigger: 'challan_rejected', templateName: '', languageCode: 'en_US', variables: ['challan_number', 'party_name', 'reason'], isActive: false },
+    { trigger: 'return_challan_sent', templateName: '', languageCode: 'en_US', variables: ['party_name', 'return_number', 'amount'], isActive: false },
+    { trigger: 'payment_received', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'challan_number'], isActive: false },
+    { trigger: 'payment_reminder', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'due_date'], isActive: false },
+    { trigger: 'note_added', templateName: '', languageCode: 'en_US', variables: ['party_name', 'challan_number', 'note'], isActive: false },
+    { trigger: 'overdue_reminder', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'days_overdue'], isActive: false },
+  ];
+
+  let config = await WhatsAppConfig.findOne({});
+  if (!config) {
+    await WhatsAppConfig.create({ isActive: false, templates: DEFAULT_TEMPLATES });
+    return { success: true, message: 'WhatsApp config created with all 8 templates.', details: DEFAULT_TEMPLATES.map(t => `Added: ${t.trigger}`) };
+  }
+
+  const details = [];
+  let added = 0;
+  for (const def of DEFAULT_TEMPLATES) {
+    const exists = config.templates.find(t => t.trigger === def.trigger);
+    if (!exists) {
+      config.templates.push(def);
+      details.push(`Added: ${def.trigger}`);
+      added++;
+    } else {
+      details.push(`Skipped (exists): ${def.trigger}`);
+    }
+  }
+  await config.save();
+
+  return {
+    success: true,
+    message: added > 0 ? `${added} templates added successfully.` : 'All templates already exist — nothing to add.',
+    details
+  };
 }
 
 // ── Script 1: Fix Company Codes ───────────────────────────────────────────────
