@@ -107,13 +107,17 @@ export async function sendChallanWhatsApp({ challan, party, company, publicToken
     company.name
   ];
 
-  // CTA button URL component (dynamic URL)
+  // Use a sample PDF as placeholder document header
+  // Template requires document in header — use a hosted sample PDF
+  const samplePdfUrl = 'https://www.w3.org/WAI/WCAG21/Techniques/pdf/img/table-word.pdf';
+
   const result = await sendWhatsAppMessage({
     to: party.phone,
     templateName: template.templateName,
     languageCode: template.languageCode || 'en_US',
     variables,
-    documentUrl: null, // PDF sending requires hosted URL — skip for now, add later
+    documentUrl: samplePdfUrl,
+    documentName: `${challan.challanNumber}.pdf`,
   });
 
   return result;
