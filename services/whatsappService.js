@@ -67,12 +67,6 @@ export async function sendChallanWhatsApp({ challan, party, company, publicToken
   // Button: CTA url with dynamic token
   const components = [
     {
-      type: 'header',
-      parameters: [
-        { type: 'text', text: challan.challanNumber }
-      ]
-    },
-    {
       type: 'body',
       parameters: [
         { type: 'text', text: party.name },
