@@ -58,6 +58,10 @@ export async function sendChallanWhatsApp({ challan, party, company, publicToken
   const config = await getConfig();
   if (!config?.isActive) return { success: false, error: 'WhatsApp not enabled' };
 
+  // Check company notification settings — respect user preference
+  const notifyEnabled = company?.settings?.notifyOnChallanSentWhatsApp;
+  if (notifyEnabled === false) return { success: false, error: 'WhatsApp notifications disabled for challan_sent' };
+
   const template = config.templates?.find(t => t.trigger === 'challan_sent' && t.isActive);
   if (!template) return { success: false, error: 'No active template for challan_sent' };
 

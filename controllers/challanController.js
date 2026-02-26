@@ -97,13 +97,24 @@ export const createChallan = async (req, res, next) => {
     await challan.populate('party');
     await challan.populate('createdBy', 'name email');
 
-    // Send email if action is send
+    // Send email + WhatsApp if action is send
     if (action === 'send') {
       const partyDoc = await Party.findById(party);
       if (partyDoc?.email) {
         challan.emailSentTo = partyDoc.email;
         await Challan.updateOne({ _id: challan._id }, { emailSentTo: partyDoc.email });
         sendChallanEmail(challan, partyDoc, company, req.user).catch(e => console.error('Email failed:', e));
+      }
+      // Send WhatsApp if party has phone
+      if (partyDoc?.phone) {
+        console.log('WhatsApp check (createAndSend) — party:', partyDoc.name, '| phone:', partyDoc.phone);
+        sendChallanWhatsApp({
+          challan,
+          party: partyDoc,
+          company,
+          publicToken: challanData.publicToken
+        }).then(r => console.log('WhatsApp result:', JSON.stringify(r)))
+          .catch(e => console.error('WhatsApp send error:', e));
       }
       // Auto-deduct inventory stock for linked items
       deductStockForChallan({
@@ -278,18 +289,13 @@ export const sendChallan = async (req, res, next) => {
     }
 
     // Send WhatsApp if party has phone number
-    console.log('WhatsApp check — party:', challan.party?.name, '| phone:', challan.party?.phone);
     if (challan.party?.phone) {
-      console.log('Sending WhatsApp to:', challan.party.phone);
       sendChallanWhatsApp({
         challan,
         party: challan.party,
         company,
         publicToken: token
-      }).then(r => console.log('WhatsApp result:', JSON.stringify(r)))
-        .catch(e => console.error('WhatsApp send error:', e));
-    } else {
-      console.log('WhatsApp skipped — no phone number on party');
+      }).catch(e => console.error('WhatsApp send error:', e));
     }
 
     // Auto-deduct inventory stock for linked items
