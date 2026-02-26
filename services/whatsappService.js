@@ -8,7 +8,6 @@ async function getConfig() {
   return await WhatsAppConfig.findOne({ isActive: true });
 }
 
-// ── Send a WhatsApp template message ─────────────────────────────────────────
 export async function sendWhatsAppMessage({ to, templateName, languageCode = 'en_US', components = [], companyConfig = null }) {
   try {
     let phoneNumberId, accessToken;
@@ -18,12 +17,11 @@ export async function sendWhatsAppMessage({ to, templateName, languageCode = 'en
       accessToken = companyConfig.accessToken;
     } else {
       const config = await getConfig();
-      if (!config) throw new Error('WhatsApp not configured. Please add credentials in SuperAdmin.');
+      if (!config) throw new Error('WhatsApp not configured.');
       phoneNumberId = config.phoneNumberId;
       accessToken = config.accessToken;
     }
 
-    // Clean phone number
     const cleanPhone = to.replace(/\D/g, '');
     const phone = cleanPhone.startsWith('91') ? cleanPhone : `91${cleanPhone}`;
 
@@ -38,17 +36,12 @@ export async function sendWhatsAppMessage({ to, templateName, languageCode = 'en
       }
     };
 
-    console.log('WhatsApp payload:', JSON.stringify(payload, null, 2));
+    console.log('WhatsApp payload:', JSON.stringify(payload));
 
     const response = await axios.post(
       `${META_API_BASE}/${phoneNumberId}/messages`,
       payload,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      { headers: { 'Authorization': `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
     );
 
     return { success: true, messageId: response.data?.messages?.[0]?.id };
@@ -59,7 +52,6 @@ export async function sendWhatsAppMessage({ to, templateName, languageCode = 'en
   }
 }
 
-// ── Send challan to party ─────────────────────────────────────────────────────
 export async function sendChallanWhatsApp({ challan, party, company, publicToken }) {
   if (!party?.phone) return { success: false, error: 'Party has no phone number' };
 
@@ -69,14 +61,17 @@ export async function sendChallanWhatsApp({ challan, party, company, publicToken
   const template = config.templates?.find(t => t.trigger === 'challan_sent' && t.isActive);
   if (!template) return { success: false, error: 'No active template for challan_sent' };
 
-  const acceptRejectUrl = `https://theparchi-frontend1.vercel.app/challan/public/${publicToken}`;
-
-  // Template send_document_all structure:
-  // Header: document (optional - skip if no PDF)
-  // Body: {{1}} = party name, {{2}} = challan number, {{3}} = company name  
-  // Button: CTA url (dynamic)
-
+  // Template structure:
+  // Header: text with {{Order Status}} variable
+  // Body: {{customer_name}}, {{challan_number}}, {{company_name}}
+  // Button: CTA url with dynamic token
   const components = [
+    {
+      type: 'header',
+      parameters: [
+        { type: 'text', text: challan.challanNumber }
+      ]
+    },
     {
       type: 'body',
       parameters: [
@@ -95,12 +90,10 @@ export async function sendChallanWhatsApp({ challan, party, company, publicToken
     }
   ];
 
-  const result = await sendWhatsAppMessage({
+  return await sendWhatsAppMessage({
     to: party.phone,
     templateName: template.templateName,
     languageCode: template.languageCode || 'en_US',
     components
   });
-
-  return result;
 }
