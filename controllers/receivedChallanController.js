@@ -22,7 +22,8 @@ export const getReceivedChallans = async (req, res, next) => {
 
     const challans = await Challan.find({
       emailSentTo: { $in: emails },
-      status: { $in: ['sent', 'accepted', 'self_accepted', 'rejected', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] }
+      status: { $in: ['sent', 'accepted', 'self_accepted', 'rejected', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] },
+      selfRejectedAt: { $exists: false }  // exclude self-rejected challans
     })
       .populate('company', 'name email phone address gstNumber logo settings')
       .populate('party', 'name email phone address gstNumber')
@@ -137,9 +138,7 @@ export const createReceiverReturnChallan = async (req, res, next) => {
 
     // Use sender company's return challan numbering
     const senderCompany = await Company.findById(challan.company._id);
-    const senderChallanPrefix = senderCompany.settings?.challanPrefix || '';
-    const defaultReturnPrefix = senderChallanPrefix ? `${senderChallanPrefix}-R` : 'RCH';
-    const prefix = senderCompany.settings?.returnChallanPrefix || defaultReturnPrefix;
+    const prefix = senderCompany.settings?.returnChallanPrefix || 'RCH';
     const nextNum = senderCompany.settings?.nextReturnChallanNumber || 1;
     const returnChallanNumber = `${prefix}-${nextNum}`;
 
@@ -309,9 +308,7 @@ export const createMultiChallanReturn = async (req, res, next) => {
     }
 
     // Generate return challan number using sender's prefix
-    const senderChallanPrefix = senderCompany.settings?.challanPrefix || '';
-    const defaultReturnPrefix = senderChallanPrefix ? `${senderChallanPrefix}-R` : 'RCH';
-    const prefix = senderCompany.settings?.returnChallanPrefix || defaultReturnPrefix;
+    const prefix = senderCompany.settings?.returnChallanPrefix || 'RCH';
     const nextNum = senderCompany.settings?.nextReturnChallanNumber || 1;
     const returnChallanNumber = `${prefix}-${nextNum}`;
 

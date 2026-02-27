@@ -97,24 +97,13 @@ export const createChallan = async (req, res, next) => {
     await challan.populate('party');
     await challan.populate('createdBy', 'name email');
 
-    // Send email + WhatsApp if action is send
+    // Send email if action is send
     if (action === 'send') {
       const partyDoc = await Party.findById(party);
       if (partyDoc?.email) {
         challan.emailSentTo = partyDoc.email;
         await Challan.updateOne({ _id: challan._id }, { emailSentTo: partyDoc.email });
         sendChallanEmail(challan, partyDoc, company, req.user).catch(e => console.error('Email failed:', e));
-      }
-      // Send WhatsApp if party has phone
-      if (partyDoc?.phone) {
-        console.log('WhatsApp check (createAndSend) — party:', partyDoc.name, '| phone:', partyDoc.phone);
-        sendChallanWhatsApp({
-          challan,
-          party: partyDoc,
-          company,
-          publicToken: challanData.publicToken
-        }).then(r => console.log('WhatsApp result:', JSON.stringify(r)))
-          .catch(e => console.error('WhatsApp send error:', e));
       }
       // Auto-deduct inventory stock for linked items
       deductStockForChallan({
@@ -395,13 +384,26 @@ export const selfActionChallan = async (req, res, next) => {
     else if (action === 'reject') newStatus = 'rejected';
     else return res.status(400).json({ success: false, message: 'Invalid action' });
 
-    await Challan.updateOne({ _id: challan._id }, {
+    const updateData = {
       status: newStatus,
       'partyResponse.status': action === 'accept' ? 'accepted' : 'rejected',
       'partyResponse.respondedAt': new Date(),
       'partyResponse.remarks': remarks || '',
       'partyResponse.selfAction': true,
       'partyResponse.actionBy': req.user.id
+    };
+
+    // If self-rejected: hide from receiver by clearing emailSentTo
+    // so it no longer appears in their received challans
+    if (action === 'reject') {
+      updateData.selfRejectedAt = new Date();
+    }
+
+    await Challan.updateOne({ _id: challan._id }, updateData);
+
+    // Add trail entry
+    await Challan.updateOne({ _id: challan._id }, {
+      $push: { sfpTrail: { action: action === 'accept' ? 'self_accepted' : 'self_rejected', by: req.user.id, at: new Date() } }
     });
 
     res.json({ success: true, message: `Challan ${action}ed!` });
@@ -455,5 +457,71 @@ export const fixChallanStatuses = async (req, res, next) => {
     );
 
     res.json({ success: true, message: 'Statuses fixed!', fixed: { accepted: r1.modifiedCount, rejected: r2.modifiedCount, selfAccepted: r3.modifiedCount } });
+  } catch (error) { next(error); }
+};
+
+// @desc  Modify a rejected challan and resend (adds revision suffix A001 → A001-R1)
+// @route PUT /api/challans/:id/modify-resend
+export const modifyAndResendChallan = async (req, res, next) => {
+  try {
+    const challan = await Challan.findOne({ _id: req.params.id, company: req.user.company });
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
+
+    const isRejected = challan.status === 'rejected' ||
+      (challan.status === 'sent' && challan.partyResponse?.status === 'rejected');
+    if (!isRejected) {
+      return res.status(400).json({ success: false, message: 'Only rejected challans can be modified and resent' });
+    }
+
+    const { items, notes } = req.body;
+    const { items: processedItems, subtotal, totalGST, grandTotal } = calcTotals(items);
+
+    // Generate revision number: A001 → A001-R1, A001-R1 → A001-R2
+    const baseNumber = challan.challanNumber.replace(/-R\d+$/, '');
+    const revMatch = challan.challanNumber.match(/-R(\d+)$/);
+    const nextRev = revMatch ? parseInt(revMatch[1]) + 1 : 1;
+    const newChallanNumber = `${baseNumber}-R${nextRev}`;
+
+    // Generate new public token
+    const publicToken = crypto.randomBytes(32).toString('hex');
+
+    await Challan.updateOne({ _id: challan._id }, {
+      challanNumber: newChallanNumber,
+      items: processedItems,
+      subtotal, totalGST, grandTotal,
+      notes,
+      status: 'sent',
+      publicToken,
+      emailSentAt: new Date(),
+      'partyResponse.status': 'pending',
+      'partyResponse.respondedAt': null,
+      'partyResponse.remarks': '',
+      $push: {
+        sfpTrail: {
+          action: 'modified_and_resent',
+          by: req.user.id,
+          at: new Date(),
+          note: `Revised from ${challan.challanNumber} to ${newChallanNumber}`
+        }
+      }
+    });
+
+    const updated = await Challan.findById(challan._id).populate('party').populate('createdBy', 'name email');
+    const company = await Company.findById(req.user.company);
+    const partyDoc = await Party.findById(challan.party);
+
+    // Resend email
+    if (partyDoc?.email) {
+      await Challan.updateOne({ _id: challan._id }, { emailSentTo: partyDoc.email });
+      sendChallanEmail(updated, partyDoc, company, req.user).catch(e => console.error('Email failed:', e));
+    }
+
+    // Resend WhatsApp
+    if (partyDoc?.phone) {
+      sendChallanWhatsApp({ challan: updated, party: partyDoc, company, publicToken })
+        .catch(e => console.error('WhatsApp failed:', e));
+    }
+
+    res.json({ success: true, message: `Challan revised to ${newChallanNumber} and resent!`, data: updated });
   } catch (error) { next(error); }
 };
