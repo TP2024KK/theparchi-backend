@@ -1,5 +1,5 @@
 import express from 'express';
-import { createChallan, getChallans, getChallan, updateChallan, deleteChallan, getChallanStats, sendChallan, selfActionChallan, sfpChallan, getSFPRecipients, fixChallanStatuses } from '../controllers/challanController.js';
+import { createChallan, getChallans, getChallan, updateChallan, deleteChallan, getChallanStats, sendChallan, selfActionChallan, sfpChallan, getSFPRecipients, fixChallanStatuses, modifyAndResendChallan } from '../controllers/challanController.js';
 import { protect } from '../middleware/auth.js';
 
 const router = express.Router();
