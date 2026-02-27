@@ -100,13 +100,15 @@ export const respondToChallan = async (req, res) => {
       return res.status(400).json({ success: false, message: `Challan already ${challan.partyResponse.status}` });
     }
 
-    // Verify OTP
-    if (!challan.partyOTP?.code || challan.partyOTP.code !== otp) {
-      return res.status(400).json({ success: false, message: 'Invalid OTP' });
-    }
-
-    if (new Date() > challan.partyOTP.expiresAt) {
-      return res.status(400).json({ success: false, message: 'OTP expired. Please request a new one.' });
+    // Verify OTP — skip if WhatsApp route (token itself is sufficient auth)
+    const isWhatsAppRoute = req.isWhatsApp || otp === 'wa-skip';
+    if (!isWhatsAppRoute) {
+      if (!challan.partyOTP?.code || challan.partyOTP.code !== otp) {
+        return res.status(400).json({ success: false, message: 'Invalid OTP' });
+      }
+      if (new Date() > challan.partyOTP.expiresAt) {
+        return res.status(400).json({ success: false, message: 'OTP expired. Please request a new one.' });
+      }
     }
 
     // Update challan
