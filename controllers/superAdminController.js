@@ -1,5 +1,4 @@
 import Company from '../models/Company.js';
-import WhatsAppConfig from '../models/WhatsAppConfig.js';
 import User from '../models/User.js';
 import Challan from '../models/Challan.js';
 import { PLANS } from '../config/plans.js';
@@ -250,177 +249,182 @@ export const getGrowthData = async (req, res, next) => {
   } catch (error) { next(error); }
 };
 
-// ── Maintenance Scripts ───────────────────────────────────────────────────────
-export const runMaintenanceScript = async (req, res, next) => {
+// ── Audit Logs ────────────────────────────────────────────────────────────────
+export const getAuditLogs = async (req, res, next) => {
   try {
-    const { scriptId } = req.params;
+    const { page = 1, limit = 50, search = '', action = '', startDate, endDate } = req.query;
+    const skip = (page - 1) * limit;
 
-    if (scriptId === 'fix_company_codes') {
-      const result = await fixCompanyCodes();
-      return res.json(result);
-    }
-    if (scriptId === 'fix_challan_prefixes') {
-      const result = await fixChallanPrefixes();
-      return res.json(result);
-    }
-    if (scriptId === 'fix_return_prefixes') {
-      const result = await fixReturnPrefixes();
-      return res.json(result);
-    }
-    if (scriptId === 'seed_whatsapp_templates') {
-      const result = await seedWhatsAppTemplates();
-      return res.json(result);
-    }
-    if (scriptId === 'fix_all_legacy') {
-      const r1 = await fixCompanyCodes();
-      const r2 = await fixChallanPrefixes();
-      const r3 = await fixReturnPrefixes();
-      const details = [...r1.details, ...r2.details, ...r3.details];
-      return res.json({
-        success: true,
-        message: `All legacy fixes complete. ${details.length} updates made across all scripts.`,
-        details
-      });
+    // Build query from sfpTrail across all challans
+    const challanQuery = {};
+    if (startDate || endDate) {
+      challanQuery.createdAt = {};
+      if (startDate) challanQuery.createdAt.$gte = new Date(startDate);
+      if (endDate) challanQuery.createdAt.$lte = new Date(endDate);
     }
 
-    return res.status(400).json({ success: false, message: 'Unknown script ID' });
+    const challans = await Challan.find(challanQuery)
+      .populate('company', 'name')
+      .populate('party', 'name')
+      .populate('createdBy', 'name email')
+      .sort({ updatedAt: -1 })
+      .limit(500);
+
+    // Flatten sfpTrail into audit log entries
+    let logs = [];
+    for (const challan of challans) {
+      for (const trail of (challan.sfpTrail || [])) {
+        logs.push({
+          _id: trail._id,
+          action: trail.action,
+          at: trail.at,
+          challanNumber: challan.challanNumber,
+          challanId: challan._id,
+          company: challan.company,
+          party: challan.party,
+          by: trail.by,
+          channel: trail.channel || 'system',
+        });
+      }
+    }
+
+    // Filter by action
+    if (action) logs = logs.filter(l => l.action === action);
+
+    // Filter by search
+    if (search) {
+      const s = search.toLowerCase();
+      logs = logs.filter(l =>
+        l.challanNumber?.toLowerCase().includes(s) ||
+        l.company?.name?.toLowerCase().includes(s) ||
+        l.party?.name?.toLowerCase().includes(s)
+      );
+    }
+
+    // Sort by date desc
+    logs.sort((a, b) => new Date(b.at) - new Date(a.at));
+
+    const total = logs.length;
+    const paginated = logs.slice(skip, skip + parseInt(limit));
+
+    res.json({ success: true, data: paginated, total, page: parseInt(page), pages: Math.ceil(total / limit) });
   } catch (error) { next(error); }
 };
 
-// ── Helper: generate unique prefix from company name + id ────────────────────
-function generatePrefix(name, id) {
-  const idSuffix = id.toString().slice(-3).toUpperCase();
-  const initials = (name || 'CO')
-    .replace(/[^a-zA-Z\s]/g, '')
-    .split(/\s+/)
-    .filter(Boolean)
-    .map(w => w[0].toUpperCase())
-    .join('')
-    .slice(0, 4) || 'CO';
-  return `${initials}${idSuffix}`;
-}
+export const getAuditLogStats = async (req, res, next) => {
+  try {
+    const { period = '7d' } = req.query;
+    const days = period === '30d' ? 30 : period === '90d' ? 90 : 7;
+    const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
-// ── Script: Seed WhatsApp Templates ──────────────────────────────────────────
-async function seedWhatsAppTemplates() {
-  const DEFAULT_TEMPLATES = [
-    { trigger: 'challan_sent', templateName: 'send_document_all', languageCode: 'en_US', variables: ['party_name', 'challan_number', 'company_name'], isActive: true },
-    { trigger: 'challan_accepted', templateName: '', languageCode: 'en_US', variables: ['challan_number', 'party_name'], isActive: false },
-    { trigger: 'challan_rejected', templateName: '', languageCode: 'en_US', variables: ['challan_number', 'party_name', 'reason'], isActive: false },
-    { trigger: 'return_challan_sent', templateName: '', languageCode: 'en_US', variables: ['party_name', 'return_number', 'amount'], isActive: false },
-    { trigger: 'payment_received', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'challan_number'], isActive: false },
-    { trigger: 'payment_reminder', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'due_date'], isActive: false },
-    { trigger: 'note_added', templateName: '', languageCode: 'en_US', variables: ['party_name', 'challan_number', 'note'], isActive: false },
-    { trigger: 'overdue_reminder', templateName: '', languageCode: 'en_US', variables: ['party_name', 'amount', 'days_overdue'], isActive: false },
-  ];
+    const challans = await Challan.find({ updatedAt: { $gte: since } });
 
-  let config = await WhatsAppConfig.findOne({});
-  if (!config) {
-    await WhatsAppConfig.create({ isActive: false, templates: DEFAULT_TEMPLATES });
-    return { success: true, message: 'WhatsApp config created with all 8 templates.', details: DEFAULT_TEMPLATES.map(t => `Added: ${t.trigger}`) };
-  }
-
-  const details = [];
-  let added = 0;
-  for (const def of DEFAULT_TEMPLATES) {
-    const exists = config.templates.find(t => t.trigger === def.trigger);
-    if (!exists) {
-      config.templates.push(def);
-      details.push(`Added: ${def.trigger}`);
-      added++;
-    } else {
-      details.push(`Skipped (exists): ${def.trigger}`);
+    const stats = { total: 0, sent: 0, accepted: 0, rejected: 0, whatsapp: 0 };
+    for (const challan of challans) {
+      for (const trail of (challan.sfpTrail || [])) {
+        if (new Date(trail.at) >= since) {
+          stats.total++;
+          if (trail.action === 'sent_to_party') stats.sent++;
+          if (trail.action === 'accepted') stats.accepted++;
+          if (trail.action === 'rejected') stats.rejected++;
+          if (trail.channel === 'whatsapp') stats.whatsapp++;
+        }
+      }
     }
-  }
-  await config.save();
 
-  return {
-    success: true,
-    message: added > 0 ? `${added} templates added successfully.` : 'All templates already exist — nothing to add.',
-    details
-  };
-}
+    res.json({ success: true, data: stats });
+  } catch (error) { next(error); }
+};
 
-// ── Script 1: Fix Company Codes ───────────────────────────────────────────────
-async function fixCompanyCodes() {
-  const companies = await Company.find({ $or: [{ companyCode: { $exists: false } }, { companyCode: null }, { companyCode: '' }] });
-  if (companies.length === 0) {
-    return { success: true, message: 'All companies already have company codes. Nothing to update.', details: [] };
-  }
+// ── Usage Limits ──────────────────────────────────────────────────────────────
+export const getUsageLimits = async (req, res, next) => {
+  try {
+    const companies = await Company.find({}).populate('owner', 'name email');
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
 
-  const details = [];
-  for (const company of companies) {
-    let code = generatePrefix(company.name, company._id);
-    // Ensure uniqueness
-    let exists = await Company.findOne({ companyCode: code, _id: { $ne: company._id } });
-    let attempts = 0;
-    while (exists && attempts < 10) {
-      code = `${code.slice(0, -1)}${attempts}`;
-      exists = await Company.findOne({ companyCode: code, _id: { $ne: company._id } });
-      attempts++;
+    const data = await Promise.all(companies.map(async (company) => {
+      const [userCount, challanCount] = await Promise.all([
+        User.countDocuments({ company: company._id }),
+        Challan.countDocuments({ company: company._id, createdAt: { $gte: startOfMonth } }),
+      ]);
+
+      const plan = PLANS[company.plan] || PLANS['free'];
+
+      const current = {
+        users: userCount,
+        challansThisMonth: challanCount,
+        invitesSentThisMonth: 0,
+        storageUsedMb: 0,
+        apiCallsToday: 0,
+      };
+
+      const limits = {
+        maxUsers: plan.maxUsers || 10,
+        maxChallansPerMonth: plan.maxChallans || 50,
+        maxInvitesPerMonth: plan.maxInvites || 5,
+        maxStorageMb: plan.maxStorage || 100,
+        maxApiCallsPerDay: -1,
+      };
+
+      const percentages = {};
+      for (const r of [
+        { key: 'users', limitKey: 'maxUsers' },
+        { key: 'challansThisMonth', limitKey: 'maxChallansPerMonth' },
+      ]) {
+        const lim = limits[r.limitKey];
+        percentages[r.key] = lim === -1 ? 0 : Math.round((current[r.key] / lim) * 100);
+      }
+
+      return {
+        company: { _id: company._id, name: company.name, plan: company.plan, owner: company.owner },
+        current,
+        limits,
+        percentages,
+        overrides: company.settings?.usageOverride || null,
+      };
+    }));
+
+    res.json({ success: true, data });
+  } catch (error) { next(error); }
+};
+
+export const getAtRiskCompanies = async (req, res, next) => {
+  try {
+    const companies = await Company.find({}).populate('owner', 'name email');
+    const now = new Date();
+    const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const atRisk = [];
+    for (const company of companies) {
+      const [userCount, challanCount] = await Promise.all([
+        User.countDocuments({ company: company._id }),
+        Challan.countDocuments({ company: company._id, createdAt: { $gte: startOfMonth } }),
+      ]);
+      const plan = PLANS[company.plan] || PLANS['free'];
+      const maxChallans = plan.maxChallans || 50;
+      const pct = maxChallans === -1 ? 0 : Math.round((challanCount / maxChallans) * 100);
+      if (pct >= 80) {
+        atRisk.push({
+          company: { _id: company._id, name: company.name, plan: company.plan, owner: company.owner },
+          current: { challansThisMonth: challanCount, users: userCount },
+          limits: { maxChallansPerMonth: maxChallans },
+          percentages: { challansThisMonth: pct },
+        });
+      }
     }
-    await Company.updateOne({ _id: company._id }, { $set: { companyCode: code } });
-    details.push(`${company.name} → code: ${code}`);
-  }
 
-  return {
-    success: true,
-    message: `Company codes generated for ${details.length} companies.`,
-    details
-  };
-}
+    res.json({ success: true, data: atRisk });
+  } catch (error) { next(error); }
+};
 
-// ── Script 2: Fix Challan Prefixes ────────────────────────────────────────────
-async function fixChallanPrefixes() {
-  const companies = await Company.find({
-    $or: [
-      { 'settings.challanPrefix': 'CH' },
-      { 'settings.challanPrefix': { $exists: false } },
-      { 'settings.challanPrefix': null },
-      { 'settings.challanPrefix': '' }
-    ]
-  });
-  if (companies.length === 0) {
-    return { success: true, message: 'All companies already have unique challan prefixes. Nothing to update.', details: [] };
-  }
-
-  const details = [];
-  for (const company of companies) {
-    const prefix = generatePrefix(company.name, company._id);
-    await Company.updateOne({ _id: company._id }, { $set: { 'settings.challanPrefix': prefix } });
-    details.push(`${company.name} → prefix: ${prefix}`);
-  }
-
-  return {
-    success: true,
-    message: `Challan prefixes fixed for ${details.length} companies.`,
-    details
-  };
-}
-
-// ── Script 3: Fix Return Prefixes ─────────────────────────────────────────────
-async function fixReturnPrefixes() {
-  const companies = await Company.find({
-    $or: [
-      { 'settings.returnChallanPrefix': 'RCH' },
-      { 'settings.returnChallanPrefix': { $exists: false } },
-      { 'settings.returnChallanPrefix': null },
-      { 'settings.returnChallanPrefix': '' }
-    ]
-  });
-  if (companies.length === 0) {
-    return { success: true, message: 'All companies already have unique return prefixes. Nothing to update.', details: [] };
-  }
-
-  const details = [];
-  for (const company of companies) {
-    const prefix = generatePrefix(company.name, company._id) + 'R';
-    await Company.updateOne({ _id: company._id }, { $set: { 'settings.returnChallanPrefix': prefix } });
-    details.push(`${company.name} → return prefix: ${prefix}`);
-  }
-
-  return {
-    success: true,
-    message: `Return prefixes fixed for ${details.length} companies.`,
-    details
-  };
-}
+export const setUsageOverride = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const { reason, expiresAt } = req.body;
+    await Company.updateOne({ _id: companyId }, {
+      'settings.usageOverride': { active: true, reason, expiresAt: expiresAt ? new Date(expiresAt) : null, grantedAt: new Date() }
+    });
+    res.json({ success: true, message: 'Override granted' });
+  } catch (error) { next(error); }
+};

@@ -2,7 +2,8 @@ import express from 'express';
 import {
   getOverview, getCompanies, getCompany, updateCompanyPlan,
   suspendCompany, activateCompany, getAllUsers, getGrowthData,
-  runMaintenanceScript
+  getAuditLogs, getAuditLogStats,
+  getUsageLimits, getAtRiskCompanies, setUsageOverride
 } from '../controllers/superAdminController.js';
 import { protect } from '../middleware/auth.js';
 import { requireSuperAdmin } from '../middleware/superAdmin.js';
@@ -50,6 +51,10 @@ router.post('/companies/:id/activate', activateCompany);
 router.get('/users', getAllUsers);
 router.get('/growth', getGrowthData);
 
-router.post('/maintenance/:scriptId', runMaintenanceScript);
+router.get('/audit-logs', getAuditLogs);
+router.get('/audit-logs/stats', getAuditLogStats);
+router.get('/usage-limits', getUsageLimits);
+router.get('/usage-limits/at-risk', getAtRiskCompanies);
+router.post('/usage-limits/:companyId/override', setUsageOverride);
 
 export default router;
