@@ -307,7 +307,7 @@ export const getAuditLogs = async (req, res, next) => {
     const total = logs.length;
     const paginated = logs.slice(skip, skip + parseInt(limit));
 
-    res.json({ success: true, data: paginated, total, page: parseInt(page), pages: Math.ceil(total / limit) });
+    res.json({ success: true, data: paginated, pagination: { total, page: parseInt(page), pages: Math.ceil(total / parseInt(limit)) } });
   } catch (error) { next(error); }
 };
 
@@ -371,9 +371,14 @@ export const getUsageLimits = async (req, res, next) => {
       for (const r of [
         { key: 'users', limitKey: 'maxUsers' },
         { key: 'challansThisMonth', limitKey: 'maxChallansPerMonth' },
+        { key: 'invitesSentThisMonth', limitKey: 'maxInvitesPerMonth' },
+        { key: 'storageUsedMb', limitKey: 'maxStorageMb' },
+        { key: 'apiCallsToday', limitKey: 'maxApiCallsPerDay' },
       ]) {
         const lim = limits[r.limitKey];
-        percentages[r.key] = lim === -1 ? 0 : Math.round((current[r.key] / lim) * 100);
+        percentages[r.key] = lim === -1
+          ? { percent: 0, unlimited: true }
+          : { percent: Math.round((current[r.key] / lim) * 100), unlimited: false };
       }
 
       return {
@@ -409,7 +414,7 @@ export const getAtRiskCompanies = async (req, res, next) => {
           company: { _id: company._id, name: company.name, plan: company.plan, owner: company.owner },
           current: { challansThisMonth: challanCount, users: userCount },
           limits: { maxChallansPerMonth: maxChallans },
-          percentages: { challansThisMonth: pct },
+          percentages: { challansThisMonth: { percent: pct, unlimited: false } },
         });
       }
     }
@@ -426,5 +431,22 @@ export const setUsageOverride = async (req, res, next) => {
       'settings.usageOverride': { active: true, reason, expiresAt: expiresAt ? new Date(expiresAt) : null, grantedAt: new Date() }
     });
     res.json({ success: true, message: 'Override granted' });
+  } catch (error) { next(error); }
+};
+
+export const removeUsageOverride = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    await Company.updateOne({ _id: companyId }, { 'settings.usageOverride': null });
+    res.json({ success: true, message: 'Override removed' });
+  } catch (error) { next(error); }
+};
+
+export const updateUsageLimits = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const { limits } = req.body;
+    await Company.updateOne({ _id: companyId }, { 'settings.customLimits': limits });
+    res.json({ success: true, message: 'Limits updated' });
   } catch (error) { next(error); }
 };

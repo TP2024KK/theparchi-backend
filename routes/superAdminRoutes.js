@@ -3,7 +3,7 @@ import {
   getOverview, getCompanies, getCompany, updateCompanyPlan,
   suspendCompany, activateCompany, getAllUsers, getGrowthData,
   getAuditLogs, getAuditLogStats,
-  getUsageLimits, getAtRiskCompanies, setUsageOverride
+  getUsageLimits, getAtRiskCompanies, setUsageOverride, removeUsageOverride, updateUsageLimits
 } from '../controllers/superAdminController.js';
 import { protect } from '../middleware/auth.js';
 import { requireSuperAdmin } from '../middleware/superAdmin.js';
@@ -56,5 +56,7 @@ router.get('/audit-logs/stats', getAuditLogStats);
 router.get('/usage-limits', getUsageLimits);
 router.get('/usage-limits/at-risk', getAtRiskCompanies);
 router.post('/usage-limits/:companyId/override', setUsageOverride);
+router.delete('/usage-limits/:companyId/override', removeUsageOverride);
+router.patch('/usage-limits/:companyId/limits', updateUsageLimits);
 
 export default router;
