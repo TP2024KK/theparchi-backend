@@ -120,7 +120,7 @@ const challanSchema = new mongoose.Schema({
   },
   sfpAssignedTo: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   sfpTrail: [{
-    action: { type: String, enum: ['created', 'sfp_sent', 'sfp_viewed', 'sent_to_party', 'edited'] },
+    action: { type: String, enum: ['created', 'sfp_sent', 'sfp_viewed', 'sent_to_party', 'edited', 'self_accept', 'self_reject'] },
     by: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     to: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     note: String,
