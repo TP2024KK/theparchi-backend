@@ -2,7 +2,8 @@ import express from 'express';
 import {
   getReceivedChallans, acceptReceivedChallan, rejectReceivedChallan,
   createReceiverReturnChallan, getReceivedItems, getSenderCompanies,
-  createMultiChallanReturn, getReceiverReturnsSent, getReceiverLedger
+  createMultiChallanReturn, getReceiverReturnsSent, getReceiverLedger,
+  getReceivedChallanById
 } from '../controllers/receivedChallanController.js';
 import { protect } from '../middleware/auth.js';
 
@@ -16,7 +17,8 @@ router.post('/:id/return', createReceiverReturnChallan);
 router.get('/items', getReceivedItems);
 router.get('/senders', getSenderCompanies);
 router.post('/create-return', createMultiChallanReturn);
-router.get('/returns-sent', getReceiverReturnsSent);   // NEW: returns receiver sent to senders
-router.get('/ledger', getReceiverLedger);              // NEW: receiver's own ledger
+router.get('/returns-sent', getReceiverReturnsSent);
+router.get('/ledger', getReceiverLedger);
+router.get('/:id', getReceivedChallanById);   // MUST be last — after all named routes
 
 export default router;
