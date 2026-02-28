@@ -22,8 +22,7 @@ export const getReceivedChallans = async (req, res, next) => {
 
     const challans = await Challan.find({
       emailSentTo: { $in: emails },
-      status: { $in: ['sent', 'accepted', 'self_accepted', 'rejected', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] },
-      selfRejectedAt: { $exists: false }  // exclude self-rejected challans
+      status: { $in: ['sent', 'accepted', 'self_accepted', 'rejected', 'partially_returned', 'partially_self_returned', 'returned', 'self_returned'] }
     })
       .populate('company', 'name email phone address gstNumber logo settings')
       .populate('party', 'name email phone address gstNumber')
@@ -54,6 +53,7 @@ export const acceptReceivedChallan = async (req, res, next) => {
       remarks: remarks || '',
       selfAction: false
     };
+    challan.status = 'accepted'; // ← must sync main status
     await challan.save();
 
     // Notify sender
@@ -89,7 +89,7 @@ export const rejectReceivedChallan = async (req, res, next) => {
       remarks: remarks || '',
       selfAction: false
     };
-    challan.status = 'returned';
+    challan.status = 'rejected'; // ← was wrongly set to 'returned'
     await challan.save();
 
     // Notify sender
