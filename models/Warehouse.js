@@ -17,24 +17,20 @@ const warehouseSchema = new mongoose.Schema({
     uppercase: true
   },
   address: {
-    line1: String,
-    city: String,
-    state: String,
-    pincode: String
+    line1: { type: String, trim: true },
+    city: { type: String, trim: true },
+    state: { type: String, trim: true },
+    pincode: { type: String, trim: true }
   },
-  contactPerson: String,
-  phone: String,
-  isDefault: {
-    type: Boolean,
-    default: false
-  },
-  isActive: {
-    type: Boolean,
-    default: true
-  }
+  contactPerson: { type: String, trim: true },
+  phone: { type: String, trim: true },
+  isDefault: { type: Boolean, default: false },
+  isActive: { type: Boolean, default: true },
+  notes: { type: String, trim: true }
 }, { timestamps: true });
 
 warehouseSchema.index({ company: 1, name: 1 }, { unique: true });
+warehouseSchema.index({ company: 1, isDefault: 1 });
 
 const Warehouse = mongoose.model('Warehouse', warehouseSchema);
 export default Warehouse;
