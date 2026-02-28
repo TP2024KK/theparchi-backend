@@ -105,6 +105,18 @@ export const createChallan = async (req, res, next) => {
         await Challan.updateOne({ _id: challan._id }, { emailSentTo: partyDoc.email });
         sendChallanEmail(challan, partyDoc, company, req.user).catch(e => console.error('Email failed:', e));
       }
+      // Send WhatsApp if party has phone number
+      const partyForWA = await Party.findById(party);
+      if (partyForWA?.phone) {
+        sendChallanWhatsApp({
+          challan,
+          party: partyForWA,
+          company,
+          publicToken: challanData.publicToken
+        }).then(r => console.log('WhatsApp result (create):', JSON.stringify(r)))
+          .catch(e => console.error('WhatsApp send error (create):', e.message));
+      }
+
       // Auto-deduct inventory stock for linked items
       deductStockForChallan({
         companyId: req.user.company,
