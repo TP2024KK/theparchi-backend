@@ -32,6 +32,28 @@ export const getReceivedChallans = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+
+// @desc  Get single received challan by ID (for PDF view)
+// @route GET /api/received-challans/:id
+export const getReceivedChallanById = async (req, res, next) => {
+  try {
+    const myCompany = await Company.findById(req.user.company);
+    const myUser = await User.findById(req.user.id);
+    const emails = [myCompany?.email, myUser?.email].filter(Boolean);
+
+    const challan = await Challan.findOne({
+      _id: req.params.id,
+      emailSentTo: { $in: emails }
+    })
+      .populate('company', 'name email phone address gstNumber logo settings')
+      .populate('party', 'name email phone address gstNumber');
+
+    if (!challan) return res.status(404).json({ success: false, message: 'Challan not found' });
+
+    res.json({ success: true, data: challan });
+  } catch (err) { next(err); }
+};
+
 // @desc  Accept received challan (panel - no OTP needed)
 // @route POST /api/received-challans/:id/accept
 export const acceptReceivedChallan = async (req, res, next) => {
