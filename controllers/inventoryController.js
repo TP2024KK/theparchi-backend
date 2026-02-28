@@ -105,12 +105,9 @@ export const createInventoryItem = async (req, res, next) => {
     const existing = await InventoryItem.findOne({ company: req.user.company, sku });
     if (existing) return res.status(400).json({ success: false, message: `SKU "${sku}" already exists` });
 
-    // Generate unique barcodeId: companyId-SKU (guaranteed unique across all companies)
-    const barcodeId = `${req.user.company}-${sku}`;
-
     const item = await InventoryItem.create({
       company: req.user.company,
-      name, sku, barcodeId, category, description, unit: unit || 'pcs',
+      name, sku, category, description, unit: unit || 'pcs',
       hsnCode, reorderPoint: reorderPoint || 0,
       reorderQuantity: reorderQuantity || 0,
       purchasePrice: purchasePrice || 0,
@@ -286,37 +283,68 @@ export const addStockForReturn = async ({ companyId, userId, returnChallanId, it
   }
 };
 
-// GET /api/inventory/scan/:barcodeId  - look up item by barcode for scanner
-export const getItemByBarcode = async (req, res, next) => {
-  try {
-    const { barcodeId } = req.params;
-    const item = await InventoryItem.findOne({
-      barcodeId,
-      company: req.user.company,
-      isActive: true
-    }).select('name sku unit currentStock sellingPrice purchasePrice hsnCode barcodeId');
 
-    if (!item) return res.status(404).json({ success: false, message: 'Item not found for this barcode' });
-    res.json({ success: true, data: item });
+// @desc  Download sample CSV template for bulk upload
+// @route GET /api/inventory/bulk-template
+export const downloadBulkTemplate = async (req, res, next) => {
+  try {
+    const csvContent = [
+      'itemName,sku,description,quantity,unit,rate,gstRate,lowStockAlert',
+      'Sample Item 1,SKU001,Description here,100,pcs,250,18,10',
+      'Sample Item 2,SKU002,Another item,50,kg,500,5,5',
+      'Sample Item 3,SKU003,Third item,200,mtr,120,12,20',
+    ].join('\n');
+
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="inventory_upload_template.csv"');
+    res.send(csvContent);
   } catch (error) { next(error); }
 };
 
-// POST /api/inventory/backfill-barcodes
-// One-time script to add barcodeId to existing items that don't have one
-export const backfillBarcodeIds = async (req, res, next) => {
+// @desc  Bulk upload inventory items from CSV/Excel data
+// @route POST /api/inventory/bulk-upload
+export const bulkUploadInventory = async (req, res, next) => {
   try {
-    const items = await InventoryItem.find({
-      company: req.user.company,
-      $or: [{ barcodeId: { $exists: false } }, { barcodeId: null }, { barcodeId: '' }]
-    });
-
-    let updated = 0;
-    for (const item of items) {
-      const barcodeId = `${item.company}-${item.sku}`;
-      await InventoryItem.updateOne({ _id: item._id }, { $set: { barcodeId } });
-      updated++;
+    const { items } = req.body; // Array of item objects from parsed CSV
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ success: false, message: 'No items provided' });
     }
 
-    res.json({ success: true, message: `Updated ${updated} items with barcodeId`, updated });
+    const results = { created: 0, updated: 0, errors: [] };
+
+    for (const item of items) {
+      try {
+        if (!item.itemName) { results.errors.push({ item: item.itemName || 'Unknown', error: 'Item name required' }); continue; }
+        const existing = await InventoryItem.findOne({ company: req.user.company, sku: item.sku }).lean();
+        if (existing) {
+          await InventoryItem.updateOne({ _id: existing._id }, {
+            itemName: item.itemName,
+            description: item.description || existing.description,
+            quantity: parseFloat(item.quantity) || existing.quantity,
+            unit: item.unit || existing.unit,
+            rate: parseFloat(item.rate) || existing.rate,
+            gstRate: parseFloat(item.gstRate) || existing.gstRate,
+            lowStockAlert: parseFloat(item.lowStockAlert) || existing.lowStockAlert,
+          });
+          results.updated++;
+        } else {
+          await InventoryItem.create({
+            company: req.user.company,
+            itemName: item.itemName,
+            sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`,
+            description: item.description || '',
+            quantity: parseFloat(item.quantity) || 0,
+            unit: item.unit || 'pcs',
+            rate: parseFloat(item.rate) || 0,
+            gstRate: parseFloat(item.gstRate) || 0,
+            lowStockAlert: parseFloat(item.lowStockAlert) || 0,
+            createdBy: req.user.id,
+          });
+          results.created++;
+        }
+      } catch (e) { results.errors.push({ item: item.itemName || 'Unknown', error: e.message }); }
+    }
+
+    res.json({ success: true, message: `${results.created} created, ${results.updated} updated`, data: results });
   } catch (error) { next(error); }
 };

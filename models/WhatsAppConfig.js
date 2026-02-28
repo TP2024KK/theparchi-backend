@@ -10,7 +10,8 @@ const templateSchema = new mongoose.Schema({
   languageCode: { type: String, default: 'en_US' },
   variables: [String], // description of variables e.g. ['party_name', 'challan_number', 'company_name']
   isActive: { type: Boolean, default: true },
-  notes: String // admin notes about this template
+  notes: String, // admin notes about this template
+  hasCtaButton: { type: Boolean, default: true } // false for templates with URL in body text
 });
 
 const whatsAppConfigSchema = new mongoose.Schema({
