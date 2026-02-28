@@ -1,9 +1,7 @@
 import express from 'express';
 import {
   getOverview, getCompanies, getCompany, updateCompanyPlan,
-  suspendCompany, activateCompany, getAllUsers, getGrowthData,
-  getAuditLogs, getAuditLogStats,
-  getUsageLimits, getAtRiskCompanies, setUsageOverride, removeUsageOverride, updateUsageLimits
+  suspendCompany, activateCompany, getAllUsers, getGrowthData
 } from '../controllers/superAdminController.js';
 import { protect } from '../middleware/auth.js';
 import { requireSuperAdmin } from '../middleware/superAdmin.js';
@@ -51,12 +49,41 @@ router.post('/companies/:id/activate', activateCompany);
 router.get('/users', getAllUsers);
 router.get('/growth', getGrowthData);
 
-router.get('/audit-logs', getAuditLogs);
-router.get('/audit-logs/stats', getAuditLogStats);
-router.get('/usage-limits', getUsageLimits);
-router.get('/usage-limits/at-risk', getAtRiskCompanies);
-router.post('/usage-limits/:companyId/override', setUsageOverride);
-router.delete('/usage-limits/:companyId/override', removeUsageOverride);
-router.patch('/usage-limits/:companyId/limits', updateUsageLimits);
+// ── Maintenance Scripts ───────────────────────────────────────────────────────
+import Challan from '../models/Challan.js';
+
+router.post('/maintenance/fix_challan_statuses', async (req, res) => {
+  try {
+    const r1 = await Challan.updateMany(
+      { status: 'sent', 'partyResponse.status': 'accepted', 'partyResponse.selfAction': { $ne: true } },
+      { $set: { status: 'accepted' } }
+    );
+    const r2 = await Challan.updateMany(
+      { status: 'sent', 'partyResponse.status': 'accepted', 'partyResponse.selfAction': true },
+      { $set: { status: 'self_accepted' } }
+    );
+    const r3 = await Challan.updateMany(
+      { status: 'returned', 'partyResponse.status': 'rejected', 'partyResponse.selfAction': { $ne: true } },
+      { $set: { status: 'rejected' } }
+    );
+    const r4 = await Challan.updateMany(
+      { status: 'sent', 'partyResponse.status': 'rejected' },
+      { $set: { status: 'rejected' } }
+    );
+    const total = r1.modifiedCount + r2.modifiedCount + r3.modifiedCount + r4.modifiedCount;
+    res.json({
+      success: true,
+      message: `Fixed ${total} challan(s) successfully.`,
+      details: [
+        `sent→accepted: ${r1.modifiedCount}`,
+        `sent→self_accepted: ${r2.modifiedCount}`,
+        `returned→rejected (party reject bug): ${r3.modifiedCount}`,
+        `sent→rejected: ${r4.modifiedCount}`,
+      ].filter(d => !d.endsWith(': 0')),
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
 
 export default router;
