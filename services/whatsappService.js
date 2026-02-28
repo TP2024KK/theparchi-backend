@@ -69,7 +69,6 @@ export async function sendChallanWhatsApp({ challan, party, company, publicToken
   // Header: text with {{Order Status}} variable
   // Body: {{customer_name}}, {{challan_number}}, {{company_name}}
   // Button: CTA url with dynamic token
-  // Build body parameters (always present)
   const components = [
     {
       type: 'body',
@@ -78,19 +77,16 @@ export async function sendChallanWhatsApp({ challan, party, company, publicToken
         { type: 'text', text: challan.challanNumber },
         { type: 'text', text: company.name }
       ]
-    }
-  ];
-
-  // Add CTA button component only if template has a button (publicToken needed)
-  // Templates with URL in body text don't need button component
-  if (template.hasCtaButton !== false && publicToken) {
-    components.push({
+    },
+    {
       type: 'button',
       sub_type: 'url',
       index: '0',
-      parameters: [{ type: 'text', text: publicToken }]
-    });
-  }
+      parameters: [
+        { type: 'text', text: publicToken }
+      ]
+    }
+  ];
 
   return await sendWhatsAppMessage({
     to: party.phone,

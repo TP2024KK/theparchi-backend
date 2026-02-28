@@ -284,67 +284,133 @@ export const addStockForReturn = async ({ companyId, userId, returnChallanId, it
 };
 
 
+
 // @desc  Download sample CSV template for bulk upload
 // @route GET /api/inventory/bulk-template
 export const downloadBulkTemplate = async (req, res, next) => {
   try {
     const csvContent = [
-      'itemName,sku,description,quantity,unit,rate,gstRate,lowStockAlert',
-      'Sample Item 1,SKU001,Description here,100,pcs,250,18,10',
-      'Sample Item 2,SKU002,Another item,50,kg,500,5,5',
-      'Sample Item 3,SKU003,Third item,200,mtr,120,12,20',
+      'sku,name,description,currentStock,unit,purchasePrice,sellingPrice,gstRate,lowStockAlert',
+      'SKU001,Sample Item 1,Description here,100,pcs,200,250,18,10',
+      'SKU002,Sample Item 2,Another item,50,kg,400,500,5,5',
+      'SKU003,Sample Item 3,Third item,200,mtr,100,120,12,20',
     ].join('\n');
 
     res.setHeader('Content-Type', 'text/csv');
-    res.setHeader('Content-Disposition', 'attachment; filename="inventory_upload_template.csv"');
+    res.setHeader('Content-Disposition', 'attachment; filename="bulk_inventory_sample.csv"');
     res.send(csvContent);
   } catch (error) { next(error); }
 };
 
-// @desc  Bulk upload inventory items from CSV/Excel data
+// @desc  Validate rows from CSV before creating
+// @route POST /api/inventory/bulk-validate
+export const bulkValidateInventory = async (req, res, next) => {
+  try {
+    const { rows } = req.body;
+    if (!rows || !Array.isArray(rows)) {
+      return res.status(400).json({ success: false, message: 'No rows provided' });
+    }
+
+    const previews = [];
+    let creates = 0, updates = 0, errors = 0;
+
+    for (let i = 0; i < rows.length; i++) {
+      const row = rows[i];
+      const rowErrors = [];
+
+      if (!row.name && !row.itemName) rowErrors.push('Name is required');
+      if (!row.sku) rowErrors.push('SKU is required');
+
+      const existing = row.sku
+        ? await InventoryItem.findOne({ company: req.user.company, sku: row.sku }).lean()
+        : null;
+
+      const preview = {
+        lineNum: i + 2,
+        sku: row.sku || '',
+        name: row.name || row.itemName || '',
+        currentStock: parseFloat(row.currentStock) || 0,
+        unit: row.unit || 'pcs',
+        purchasePrice: parseFloat(row.purchasePrice) || 0,
+        sellingPrice: parseFloat(row.sellingPrice) || 0,
+        gstRate: parseFloat(row.gstRate) || 0,
+        lowStockAlert: parseFloat(row.lowStockAlert) || 0,
+        description: row.description || '',
+        isUpdate: !!existing,
+        hasErrors: rowErrors.length > 0,
+        errors: rowErrors,
+      };
+
+      previews.push(preview);
+      if (rowErrors.length > 0) errors++;
+      else if (existing) updates++;
+      else creates++;
+    }
+
+    res.json({
+      success: true,
+      data: {
+        previews,
+        summary: { creates, updates, errors, total: rows.length }
+      }
+    });
+  } catch (error) { next(error); }
+};
+
+// @desc  Bulk create/update inventory items
 // @route POST /api/inventory/bulk-upload
 export const bulkUploadInventory = async (req, res, next) => {
   try {
-    const { items } = req.body; // Array of item objects from parsed CSV
-    if (!items || !Array.isArray(items) || items.length === 0) {
+    const { previews } = req.body;
+    if (!previews || !Array.isArray(previews) || previews.length === 0) {
       return res.status(400).json({ success: false, message: 'No items provided' });
     }
 
-    const results = { created: 0, updated: 0, errors: [] };
+    const created = [], updated = [], failed = [];
 
-    for (const item of items) {
+    for (const item of previews) {
       try {
-        if (!item.itemName) { results.errors.push({ item: item.itemName || 'Unknown', error: 'Item name required' }); continue; }
-        const existing = await InventoryItem.findOne({ company: req.user.company, sku: item.sku }).lean();
+        const existing = item.sku
+          ? await InventoryItem.findOne({ company: req.user.company, sku: item.sku }).lean()
+          : null;
+
         if (existing) {
           await InventoryItem.updateOne({ _id: existing._id }, {
-            itemName: item.itemName,
-            description: item.description || existing.description,
-            quantity: parseFloat(item.quantity) || existing.quantity,
-            unit: item.unit || existing.unit,
-            rate: parseFloat(item.rate) || existing.rate,
-            gstRate: parseFloat(item.gstRate) || existing.gstRate,
-            lowStockAlert: parseFloat(item.lowStockAlert) || existing.lowStockAlert,
+            itemName: item.name,
+            description: item.description || '',
+            quantity: item.currentStock || 0,
+            unit: item.unit || 'pcs',
+            rate: item.sellingPrice || 0,
+            purchasePrice: item.purchasePrice || 0,
+            gstRate: item.gstRate || 0,
+            lowStockAlert: item.lowStockAlert || 0,
           });
-          results.updated++;
+          updated.push({ sku: item.sku, name: item.name });
         } else {
           await InventoryItem.create({
             company: req.user.company,
-            itemName: item.itemName,
+            itemName: item.name,
             sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`,
             description: item.description || '',
-            quantity: parseFloat(item.quantity) || 0,
+            quantity: item.currentStock || 0,
             unit: item.unit || 'pcs',
-            rate: parseFloat(item.rate) || 0,
-            gstRate: parseFloat(item.gstRate) || 0,
-            lowStockAlert: parseFloat(item.lowStockAlert) || 0,
+            rate: item.sellingPrice || 0,
+            purchasePrice: item.purchasePrice || 0,
+            gstRate: item.gstRate || 0,
+            lowStockAlert: item.lowStockAlert || 0,
             createdBy: req.user.id,
           });
-          results.created++;
+          created.push({ sku: item.sku, name: item.name });
         }
-      } catch (e) { results.errors.push({ item: item.itemName || 'Unknown', error: e.message }); }
+      } catch (e) {
+        failed.push({ sku: item.sku, name: item.name, error: e.message });
+      }
     }
 
-    res.json({ success: true, message: `${results.created} created, ${results.updated} updated`, data: results });
+    res.json({
+      success: true,
+      message: `${created.length} created, ${updated.length} updated`,
+      data: { created, updated, failed }
+    });
   } catch (error) { next(error); }
 };
