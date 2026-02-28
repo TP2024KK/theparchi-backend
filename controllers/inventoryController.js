@@ -57,7 +57,7 @@ export const searchInventoryItems = async (req, res, next) => {
         { name: { $regex: q, $options: 'i' } },
         { sku: { $regex: q, $options: 'i' } }
       ]
-    }).limit(10).select('name sku unit currentStock sellingPrice purchasePrice hsnCode');
+    }).limit(10).select('name sku unit currentStock sellingPrice purchasePrice hsnCode gstRate');
 
     res.json({ success: true, data: items });
   } catch (error) { next(error); }
