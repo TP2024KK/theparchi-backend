@@ -290,10 +290,10 @@ export const addStockForReturn = async ({ companyId, userId, returnChallanId, it
 export const downloadBulkTemplate = async (req, res, next) => {
   try {
     const csvContent = [
-      'sku,name,description,currentStock,unit,purchasePrice,sellingPrice,gstRate,lowStockAlert',
-      'SKU001,Sample Item 1,Description here,100,pcs,200,250,18,10',
-      'SKU002,Sample Item 2,Another item,50,kg,400,500,5,5',
-      'SKU003,Sample Item 3,Third item,200,mtr,100,120,12,20',
+      'sku,name,description,currentStock,unit,purchasePrice,sellingPrice,reorderPoint',
+      'SKU001,Sample Item 1,Description here,100,pcs,200,250,10',
+      'SKU002,Sample Item 2,Another item,50,kg,400,500,5',
+      'SKU003,Sample Item 3,Third item,200,mtr,100,120,20',
     ].join('\n');
 
     res.setHeader('Content-Type', 'text/csv');
@@ -328,13 +328,12 @@ export const bulkValidateInventory = async (req, res, next) => {
       const preview = {
         lineNum: i + 2,
         sku: row.sku || '',
-        name: row.name || row.itemName || '',
+        name: row.name || '',
         currentStock: parseFloat(row.currentStock) || 0,
         unit: row.unit || 'pcs',
         purchasePrice: parseFloat(row.purchasePrice) || 0,
         sellingPrice: parseFloat(row.sellingPrice) || 0,
-        gstRate: parseFloat(row.gstRate) || 0,
-        lowStockAlert: parseFloat(row.lowStockAlert) || 0,
+        reorderPoint: parseFloat(row.reorderPoint) || parseFloat(row.lowStockAlert) || 0,
         description: row.description || '',
         isUpdate: !!existing,
         hasErrors: rowErrors.length > 0,
@@ -376,29 +375,26 @@ export const bulkUploadInventory = async (req, res, next) => {
 
         if (existing) {
           await InventoryItem.updateOne({ _id: existing._id }, {
-            itemName: item.name,
+            name: item.name,
             description: item.description || '',
-            quantity: item.currentStock || 0,
+            currentStock: item.currentStock || 0,
             unit: item.unit || 'pcs',
-            rate: item.sellingPrice || 0,
+            sellingPrice: item.sellingPrice || 0,
             purchasePrice: item.purchasePrice || 0,
-            gstRate: item.gstRate || 0,
-            lowStockAlert: item.lowStockAlert || 0,
+            reorderPoint: item.reorderPoint || 0,
           });
           updated.push({ sku: item.sku, name: item.name });
         } else {
           await InventoryItem.create({
             company: req.user.company,
-            itemName: item.name,
+            name: item.name,
             sku: item.sku || `SKU-${Date.now()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`,
             description: item.description || '',
-            quantity: item.currentStock || 0,
+            currentStock: item.currentStock || 0,
             unit: item.unit || 'pcs',
-            rate: item.sellingPrice || 0,
+            sellingPrice: item.sellingPrice || 0,
             purchasePrice: item.purchasePrice || 0,
-            gstRate: item.gstRate || 0,
-            lowStockAlert: item.lowStockAlert || 0,
-            createdBy: req.user.id,
+            reorderPoint: item.reorderPoint || 0,
           });
           created.push({ sku: item.sku, name: item.name });
         }
