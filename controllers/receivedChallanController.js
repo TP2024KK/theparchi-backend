@@ -417,6 +417,7 @@ export const getReceiverReturnsSent = async (req, res, next) => {
       ]
     }).populate({ path: 'originalChallan', select: 'challanNumber challanDate emailSentTo company', populate: { path: 'company', select: 'name email' } })
       .populate('party', 'name phone email')
+      .populate('company', 'name email')
       .sort({ returnDate: -1 });
 
     // Filter: keep returns whose originalChallan OR any item's originalChallan is a received challan

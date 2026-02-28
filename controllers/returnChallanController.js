@@ -45,7 +45,15 @@ export const getReturnChallans = async (req, res, next) => {
 // @route GET /api/return-challans/:id
 export const getReturnChallan = async (req, res, next) => {
   try {
-    const rc = await ReturnChallan.findOne({ _id: req.params.id, company: req.user.company })
+    // Allow: owner company OR the receiver who created it (createdByCompany)
+    const rc = await ReturnChallan.findOne({
+      _id: req.params.id,
+      $or: [
+        { company: req.user.company },
+        { createdByCompany: req.user.company },
+        { createdBy: req.user.id }
+      ]
+    })
       .populate('party', 'name phone email address gstNumber')
       .populate('originalChallan', 'challanNumber challanDate')
       .populate('company', 'name address phone email gstNumber bankDetails settings logo signature')
