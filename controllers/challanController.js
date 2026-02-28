@@ -278,13 +278,17 @@ export const sendChallan = async (req, res, next) => {
     }
 
     // Send WhatsApp if party has phone number
+    console.log('WhatsApp check - party phone:', challan.party?.phone, '| company WA setting:', company?.settings?.notifyOnChallanSentWhatsApp);
     if (challan.party?.phone) {
       sendChallanWhatsApp({
         challan,
         party: challan.party,
         company,
         publicToken: token
-      }).catch(e => console.error('WhatsApp send error:', e));
+      }).then(r => console.log('WhatsApp result:', JSON.stringify(r)))
+        .catch(e => console.error('WhatsApp send error:', e.message));
+    } else {
+      console.log('WhatsApp skipped - no phone number on party');
     }
 
     // Auto-deduct inventory stock for linked items
