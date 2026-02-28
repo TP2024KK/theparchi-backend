@@ -58,10 +58,10 @@ const inventoryItemSchema = new mongoose.Schema({
     type: Number,
     default: 0
   },
-  barcodeId: {
-    type: String,
-    trim: true,
-    index: true
+  gstRate: {
+    type: Number,
+    default: 0,
+    enum: [0, 5, 12, 18, 28]
   },
   notes: String,
   isActive: {
