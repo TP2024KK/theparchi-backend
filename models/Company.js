@@ -84,6 +84,13 @@ const companySchema = new mongoose.Schema({
     notifyOnNoteAddedWhatsApp: { type: Boolean, default: false },
     // Multiple prefixes
     challanPrefixes: [{ label: String, prefix: String }],
+    // ── Inventory Settings ──────────────────────────────────
+    inventoryEnabled: { type: Boolean, default: false },
+    multiWarehouseEnabled: { type: Boolean, default: false },
+    locationTrackingEnabled: { type: Boolean, default: false },
+    autoDeductOnChallan: { type: Boolean, default: false },
+    autoAddOnReturn: { type: Boolean, default: false },
+    stockValidationOnChallan: { type: Boolean, default: false },
   },
 
   subscription: {
