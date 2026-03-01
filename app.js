@@ -24,6 +24,8 @@ import stockMovementRoutes from './routes/stockMovementRoutes.js';
 import webhookRoutes from './routes/webhookRoutes.js';
 import whatsappAdminRoutes from './routes/whatsappAdminRoutes.js';
 import subscriptionRoutes from './routes/subscriptionRoutes.js';
+import locationRoutes from './routes/locationRoutes.js';
+import purchaseRoutes from './routes/purchaseRoutes.js';
 import purchaseRoutes from './routes/purchaseRoutes.js';
 
 const app = express();
@@ -104,6 +106,8 @@ app.use('/api/stock-movements', stockMovementRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/superadmin/whatsapp', whatsappAdminRoutes);
 app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/locations', locationRoutes);
+app.use('/api/purchase-entries', purchaseRoutes);
 app.use('/api/purchase-entries', purchaseRoutes);
 
 // 404 handler
