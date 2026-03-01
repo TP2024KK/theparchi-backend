@@ -63,16 +63,24 @@ export const getPurchaseEntries = async (req, res, next) => {
 // ── GET /api/purchase-entries/:id ─────────────────────────────────────────────
 export const getPurchaseEntry = async (req, res, next) => {
   try {
-    const entry = await PurchaseEntry.findOne({ _id: req.params.id, company: req.user.company })
-      .populate('warehouse', 'name code')
-      .populate('location', 'name code')
-      .populate('createdBy', 'name')
-      .populate('receivedBy', 'name')
-      .populate('items.inventoryItem', 'name sku currentStock unit');
-
+    // Find without populate first to ensure entry exists
+    const entry = await PurchaseEntry.findOne({ _id: req.params.id, company: req.user.company });
     if (!entry) return res.status(404).json({ success: false, message: 'Purchase entry not found' });
+
+    // Populate safely — skip inventoryItem populate if items array is empty
+    await entry.populate('warehouse', 'name code');
+    await entry.populate('location', 'name code');
+    await entry.populate('createdBy', 'name');
+    await entry.populate('receivedBy', 'name');
+    if (entry.items?.length) {
+      await entry.populate('items.inventoryItem', 'name sku currentStock unit');
+    }
+
     res.json({ success: true, data: entry });
-  } catch (err) { next(err); }
+  } catch (err) {
+    console.error('getPurchaseEntry error:', err.message, err.stack);
+    next(err);
+  }
 };
 
 // ── POST /api/purchase-entries ────────────────────────────────────────────────
@@ -211,12 +219,21 @@ export const receivePurchaseEntry = async (req, res, next) => {
     const warehouseId = entry.warehouse?._id || entry.warehouse;
     const locationId = entry.location?._id || entry.location || null;
 
-    if (!warehouseId) return res.status(400).json({ success: false, message: 'No warehouse set on this purchase entry' });
+    let resolvedWarehouseId = warehouseId;
+    if (!resolvedWarehouseId) {
+      // Fall back to default warehouse
+      const defaultWH = await Warehouse.findOne({ company: req.user.company, isDefault: true, isActive: true })
+        || await Warehouse.findOne({ company: req.user.company, isActive: true });
+      if (!defaultWH) return res.status(400).json({ success: false, message: 'No warehouse found. Please set up a warehouse first.' });
+      resolvedWarehouseId = defaultWH._id;
+    }
 
     let totalReceivedValue = entry.totalReceivedValue || 0;
 
     for (const recv of receivedItems) {
-      const entryItem = entry.items.id(recv.itemId);
+      // .id() does ObjectId comparison; also try string match as fallback
+      const entryItem = entry.items.id(recv.itemId)
+        || entry.items.find(i => i._id?.toString() === recv.itemId?.toString());
       if (!entryItem) continue;
 
       const qty = Number(recv.receivedQty) || 0;
@@ -257,7 +274,7 @@ export const receivePurchaseEntry = async (req, res, next) => {
           currentStock: 0,
         });
 
-        newItem.addToLocation(warehouseId, locationId, actualQty);
+        newItem.addToLocation(resolvedWarehouseId, locationId, actualQty);
         await newItem.save();
         invItemId = newItem._id;
 
@@ -270,7 +287,7 @@ export const receivePurchaseEntry = async (req, res, next) => {
         const invItem = await InventoryItem.findOne({ _id: invItemId, company: req.user.company });
         if (invItem) {
           const beforeQty = invItem.currentStock;
-          invItem.addToLocation(warehouseId, locationId, actualQty);
+          invItem.addToLocation(resolvedWarehouseId, locationId, actualQty);
 
           // Update pricing
           invItem.lastPurchasePrice = entryItem.unitPrice || invItem.lastPurchasePrice;
