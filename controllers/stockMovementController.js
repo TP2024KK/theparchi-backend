@@ -20,6 +20,8 @@ export const getStockMovements = async (req, res, next) => {
         .populate('item', 'name sku unit')
         .populate('performedBy', 'name')
         .populate('relatedChallan', 'challanNumber')
+        .populate('warehouse', 'name code')
+        .populate('location', 'name code')
         .sort({ movementDate: -1 })
         .limit(parseInt(limit))
         .skip(skip),

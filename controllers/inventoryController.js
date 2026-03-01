@@ -1,6 +1,8 @@
 import InventoryItem from '../models/InventoryItem.js';
 import StockMovement from '../models/StockMovement.js';
 import Warehouse from '../models/Warehouse.js';
+import Location from '../models/Location.js';
+import Company from '../models/Company.js';
 
 // Helper: ensure default warehouse exists
 const ensureDefaultWarehouse = async (companyId) => {
@@ -81,6 +83,8 @@ export const getItemMovements = async (req, res, next) => {
     })
       .populate('performedBy', 'name')
       .populate('relatedChallan', 'challanNumber')
+      .populate('warehouse', 'name code')
+      .populate('location', 'name code')
       .sort({ movementDate: -1 })
       .limit(50);
     res.json({ success: true, data: movements });
@@ -174,8 +178,7 @@ export const deleteInventoryItem = async (req, res, next) => {
 // POST /api/inventory/:id/adjust  (manual stock adjustment)
 export const adjustStock = async (req, res, next) => {
   try {
-    const { type, quantity, reason, notes, unitPrice } = req.body;
-    // type: 'IN' | 'OUT', reason: string, quantity: number
+    const { type, quantity, reason, notes, unitPrice, warehouseId, locationId } = req.body;
 
     if (!['IN', 'OUT'].includes(type)) return res.status(400).json({ success: false, message: 'Type must be IN or OUT' });
     if (!quantity || quantity <= 0) return res.status(400).json({ success: false, message: 'Quantity must be > 0' });
@@ -183,11 +186,29 @@ export const adjustStock = async (req, res, next) => {
     const item = await InventoryItem.findOne({ _id: req.params.id, company: req.user.company });
     if (!item) return res.status(404).json({ success: false, message: 'Item not found' });
 
+    // Get company settings to check stockValidation toggle
+    const company = await Company.findById(req.user.company).select('settings');
+    const settings = company?.settings || {};
+
     if (type === 'OUT' && item.currentStock < quantity) {
       return res.status(400).json({
         success: false,
         message: `Insufficient stock. Available: ${item.currentStock}, Requested: ${quantity}`
       });
+    }
+
+    // Resolve warehouse — use provided or fall back to default
+    let resolvedWarehouseId = warehouseId || null;
+    if (!resolvedWarehouseId && settings.multiWarehouseEnabled) {
+      const defaultWH = await Warehouse.findOne({ company: req.user.company, isDefault: true, isActive: true });
+      resolvedWarehouseId = defaultWH?._id || null;
+    }
+
+    // Validate location belongs to warehouse if provided
+    let resolvedLocationId = locationId || null;
+    if (resolvedLocationId && resolvedWarehouseId) {
+      const loc = await Location.findOne({ _id: resolvedLocationId, warehouse: resolvedWarehouseId, company: req.user.company, isActive: true });
+      if (!loc) resolvedLocationId = null;
     }
 
     const beforeQty = item.currentStock;
@@ -197,6 +218,8 @@ export const adjustStock = async (req, res, next) => {
     await StockMovement.create({
       company: req.user.company,
       item: item._id,
+      warehouse: resolvedWarehouseId,
+      location: resolvedLocationId,
       type,
       reason: reason || (type === 'IN' ? 'manual_in' : 'manual_out'),
       quantity,
@@ -213,73 +236,104 @@ export const adjustStock = async (req, res, next) => {
 };
 
 // Called internally when challan is sent — deduct stock for inventory-linked items
+// Respects company settings: inventoryEnabled, autoDeductOnChallan, stockValidationOnChallan
 export const deductStockForChallan = async ({ companyId, userId, challanId, items }) => {
-  for (const item of items) {
-    if (!item.inventoryItemId) continue; // skip non-inventory items
-    try {
-      const invItem = await InventoryItem.findOne({ _id: item.inventoryItemId, company: companyId });
-      if (!invItem) continue;
+  try {
+    const company = await Company.findById(companyId).select('settings');
+    const settings = company?.settings || {};
 
-      const qty = item.quantity || 0;
-      if (qty <= 0) continue;
-      if (invItem.currentStock < qty) continue; // soft — don't block, just skip
+    // Skip entirely if inventory module or auto-deduct is off
+    if (!settings.inventoryEnabled || !settings.autoDeductOnChallan) return;
 
-      const beforeQty = invItem.currentStock;
-      invItem.currentStock -= qty;
-      await invItem.save();
+    for (const item of items) {
+      if (!item.inventoryItemId) continue;
+      try {
+        const invItem = await InventoryItem.findOne({ _id: item.inventoryItemId, company: companyId });
+        if (!invItem) continue;
 
-      await StockMovement.create({
-        company: companyId,
-        item: invItem._id,
-        type: 'OUT',
-        reason: 'challan_sent',
-        quantity: qty,
-        beforeQty,
-        afterQty: invItem.currentStock,
-        unitPrice: item.rate || 0,
-        totalValue: (item.rate || 0) * qty,
-        relatedChallan: challanId,
-        performedBy: userId,
-        notes: `Auto-deducted for challan`
-      });
-    } catch (err) {
-      console.error('Stock deduction error for item:', item.inventoryItemId, err.message);
+        const qty = item.quantity || 0;
+        if (qty <= 0) continue;
+
+        // If stockValidation is ON, block if insufficient (caller must handle this error)
+        if (settings.stockValidationOnChallan && invItem.currentStock < qty) {
+          throw new Error(`Insufficient stock for "${invItem.name}". Available: ${invItem.currentStock}, Required: ${qty}`);
+        }
+
+        // Soft skip if no validation but still insufficient
+        if (invItem.currentStock < qty && !settings.stockValidationOnChallan) continue;
+
+        const beforeQty = invItem.currentStock;
+        invItem.currentStock -= qty;
+        await invItem.save();
+
+        await StockMovement.create({
+          company: companyId,
+          item: invItem._id,
+          type: 'OUT',
+          reason: 'challan_sent',
+          quantity: qty,
+          beforeQty,
+          afterQty: invItem.currentStock,
+          unitPrice: item.rate || 0,
+          totalValue: (item.rate || 0) * qty,
+          relatedChallan: challanId,
+          performedBy: userId,
+          notes: 'Auto-deducted for challan'
+        });
+      } catch (err) {
+        if (settings.stockValidationOnChallan) throw err; // bubble up to block challan
+        console.error('Stock deduction error for item:', item.inventoryItemId, err.message);
+      }
     }
+  } catch (err) {
+    if (err.message?.includes('Insufficient stock')) throw err;
+    console.error('deductStockForChallan error:', err.message);
   }
 };
 
 // Called internally when return challan received — add stock back
+// Respects company settings: inventoryEnabled, autoAddOnReturn
 export const addStockForReturn = async ({ companyId, userId, returnChallanId, items }) => {
-  for (const item of items) {
-    if (!item.inventoryItemId) continue;
-    try {
-      const invItem = await InventoryItem.findOne({ _id: item.inventoryItemId, company: companyId });
-      if (!invItem) continue;
+  try {
+    const company = await Company.findById(companyId).select('settings');
+    const settings = company?.settings || {};
 
-      const qty = item.returnedQty || item.quantity || 0;
-      if (qty <= 0) continue;
+    // Skip entirely if inventory module or auto-add is off
+    if (!settings.inventoryEnabled || !settings.autoAddOnReturn) return;
 
-      const beforeQty = invItem.currentStock;
-      invItem.currentStock += qty;
-      await invItem.save();
+    for (const item of items) {
+      if (!item.inventoryItemId) continue;
+      try {
+        const invItem = await InventoryItem.findOne({ _id: item.inventoryItemId, company: companyId });
+        if (!invItem) continue;
 
-      await StockMovement.create({
-        company: companyId,
-        item: invItem._id,
-        type: 'IN',
-        reason: 'return_received',
-        quantity: qty,
-        beforeQty,
-        afterQty: invItem.currentStock,
-        unitPrice: item.rate || 0,
-        totalValue: (item.rate || 0) * qty,
-        relatedReturnChallan: returnChallanId,
-        performedBy: userId,
-        notes: `Auto-added from return challan`
-      });
-    } catch (err) {
-      console.error('Stock return error for item:', item.inventoryItemId, err.message);
+        const qty = item.returnedQty || item.quantity || 0;
+        if (qty <= 0) continue;
+
+        const beforeQty = invItem.currentStock;
+        invItem.currentStock += qty;
+        await invItem.save();
+
+        await StockMovement.create({
+          company: companyId,
+          item: invItem._id,
+          type: 'IN',
+          reason: 'return_received',
+          quantity: qty,
+          beforeQty,
+          afterQty: invItem.currentStock,
+          unitPrice: item.rate || 0,
+          totalValue: (item.rate || 0) * qty,
+          relatedReturnChallan: returnChallanId,
+          performedBy: userId,
+          notes: 'Auto-added from return challan'
+        });
+      } catch (err) {
+        console.error('Stock return error for item:', item.inventoryItemId, err.message);
+      }
     }
+  } catch (err) {
+    console.error('addStockForReturn error:', err.message);
   }
 };
 
@@ -290,10 +344,10 @@ export const addStockForReturn = async ({ companyId, userId, returnChallanId, it
 export const downloadBulkTemplate = async (req, res, next) => {
   try {
     const csvContent = [
-      'sku,name,category,hsnCode,description,currentStock,unit,purchasePrice,sellingPrice,gstRate,reorderPoint',
-      'SKU001,Sample Item 1,Tops,621210,Description here,100,pcs,200,250,18,10',
-      'SKU002,Sample Item 2,Dresses,621420,Another item,50,pcs,400,1399,5,5',
-      'SKU003,Sample Item 3,Fabric,520811,Third item,200,mtr,100,120,12,20',
+      'sku,name,category,hsnCode,description,currentStock,unit,purchasePrice,sellingPrice,gstRate,reorderPoint,warehouseName,locationName',
+      'SKU001,Sample Item 1,Tops,621210,Description here,100,pcs,200,250,18,10,Main Warehouse,Rack A',
+      'SKU002,Sample Item 2,Dresses,621420,Another item,50,pcs,400,1399,5,5,Main Warehouse,',
+      'SKU003,Sample Item 3,Fabric,520811,Third item,200,mtr,100,120,12,20,,',
     ].join('\n');
 
     res.setHeader('Content-Type', 'text/csv');
