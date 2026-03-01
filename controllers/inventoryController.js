@@ -621,3 +621,57 @@ export const bulkUploadInventory = async (req, res, next) => {
     });
   } catch (error) { next(error); }
 };
+
+// ── POST /api/inventory/migrate-location-stock ────────────────────────────────
+// One-time migration: moves currentStock into default warehouse locationStock
+// Safe to run multiple times — skips items that already have locationStock
+export const migrateToLocationStock = async (req, res, next) => {
+  try {
+    const defaultWH = await ensureDefaultWarehouse(req.user.company);
+
+    const items = await InventoryItem.find({
+      company: req.user.company,
+      isActive: true,
+      currentStock: { $gt: 0 },
+      $or: [
+        { locationStock: { $size: 0 } },
+        { locationStock: { $exists: false } }
+      ]
+    });
+
+    let migrated = 0;
+    for (const item of items) {
+      // Double-check it really has no location stock
+      const hasStock = item.locationStock?.some(ls => ls.currentStock > 0);
+      if (hasStock) continue;
+
+      item.locationStock = [];
+      item.addToLocation(defaultWH._id, null, item.currentStock);
+      await item.save();
+
+      // Log as adjustment so there is an audit trail
+      await StockMovement.create({
+        company: req.user.company,
+        item: item._id,
+        warehouse: defaultWH._id,
+        type: 'IN',
+        reason: 'adjustment',
+        quantity: item.currentStock,
+        beforeQty: 0,
+        afterQty: item.currentStock,
+        performedBy: req.user.id,
+        notes: `Migrated to warehouse stock — ${defaultWH.name}`,
+      });
+
+      migrated++;
+    }
+
+    res.json({
+      success: true,
+      message: migrated > 0
+        ? `Migrated ${migrated} item${migrated > 1 ? 's' : ''} to ${defaultWH.name}`
+        : 'All items already have warehouse stock assigned. Nothing to migrate.',
+      data: { migrated, warehouse: defaultWH.name }
+    });
+  } catch (error) { next(error); }
+};
