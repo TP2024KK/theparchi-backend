@@ -91,6 +91,8 @@ const companySchema = new mongoose.Schema({
     autoDeductOnChallan: { type: Boolean, default: false },
     autoAddOnReturn: { type: Boolean, default: false },
     stockValidationOnChallan: { type: Boolean, default: false },
+    purchasePrefix: { type: String, default: 'PO' },
+    nextPurchaseNumber: { type: Number, default: 1 },
   },
 
   subscription: {

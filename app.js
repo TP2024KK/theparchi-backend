@@ -20,11 +20,11 @@ import superAdminRoutes from './routes/superAdminRoutes.js';
 import challanNoteRoutes from './routes/challanNoteRoutes.js';
 import inventoryRoutes from './routes/inventoryRoutes.js';
 import warehouseRoutes from './routes/warehouseRoutes.js';
-import locationRoutes from './routes/locationRoutes.js';
 import stockMovementRoutes from './routes/stockMovementRoutes.js';
 import webhookRoutes from './routes/webhookRoutes.js';
 import whatsappAdminRoutes from './routes/whatsappAdminRoutes.js';
 import subscriptionRoutes from './routes/subscriptionRoutes.js';
+import purchaseRoutes from './routes/purchaseRoutes.js';
 
 const app = express();
 
@@ -100,11 +100,11 @@ app.use('/api/superadmin', superAdminRoutes);
 app.use('/api/challan-notes', challanNoteRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/warehouses', warehouseRoutes);
-app.use('/api/locations', locationRoutes);
 app.use('/api/stock-movements', stockMovementRoutes);
 app.use('/api/webhook', webhookRoutes);
 app.use('/api/superadmin/whatsapp', whatsappAdminRoutes);
 app.use('/api/subscription', subscriptionRoutes);
+app.use('/api/purchase-entries', purchaseRoutes);
 
 // 404 handler
 app.use('*', (req, res) => {
