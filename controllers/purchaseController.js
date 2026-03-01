@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import PurchaseEntry from '../models/PurchaseEntry.js';
 import InventoryItem from '../models/InventoryItem.js';
 import StockMovement from '../models/StockMovement.js';
@@ -27,6 +28,31 @@ const calcItemTotals = (item) => {
     gstAmount: Math.round(gstAmt * 100) / 100,
     totalAmount: Math.round((base + gstAmt) * 100) / 100,
   };
+};
+
+
+// ── Helper: auto-create party if supplier name is new ────────────────────────
+const ensureSupplierParty = async (companyId, supplierName, supplierPhone, supplierGST) => {
+  if (!supplierName?.trim()) return;
+  try {
+    const Party = mongoose.model('Party');
+    const existing = await Party.findOne({
+      company: companyId,
+      name: { $regex: `^${supplierName.trim()}$`, $options: 'i' }
+    });
+    if (!existing) {
+      await Party.create({
+        company: companyId,
+        name: supplierName.trim(),
+        phone: supplierPhone || '',
+        gstin: supplierGST || '',
+        type: 'supplier',
+      });
+    }
+  } catch (e) {
+    // Non-fatal — party creation failure should not block PO save
+    console.warn('Could not auto-create supplier party:', e.message);
+  }
 };
 
 // ── GET /api/purchase-entries ─────────────────────────────────────────────────
@@ -67,14 +93,21 @@ export const getPurchaseEntry = async (req, res, next) => {
     const entry = await PurchaseEntry.findOne({ _id: req.params.id, company: req.user.company });
     if (!entry) return res.status(404).json({ success: false, message: 'Purchase entry not found' });
 
-    // Populate safely — skip inventoryItem populate if items array is empty
-    await entry.populate('warehouse', 'name code');
-    await entry.populate('location', 'name code');
-    await entry.populate('createdBy', 'name');
-    await entry.populate('receivedBy', 'name');
+    // Populate safely with individual try/catch per populate
+    try { await entry.populate('warehouse', 'name code'); } catch(e) { console.warn('warehouse populate failed:', e.message); }
+    try { await entry.populate('location', 'name code'); } catch(e) { console.warn('location populate failed:', e.message); }
+    try { await entry.populate('createdBy', 'name'); } catch(e) { console.warn('createdBy populate failed:', e.message); }
+    try { await entry.populate('receivedBy', 'name'); } catch(e) { console.warn('receivedBy populate failed:', e.message); }
     if (entry.items?.length) {
-      await entry.populate('items.inventoryItem', 'name sku currentStock unit');
+      // Only populate inventoryItem refs that are non-null
+      try { await entry.populate('items.inventoryItem', 'name sku currentStock unit'); } catch(e) { console.warn('items.inventoryItem populate failed:', e.message); }
     }
+
+    // Ensure items array exists and each item has receivedQty
+    if (!entry.items) entry.items = [];
+    entry.items.forEach(item => {
+      if (item.receivedQty === undefined) item.receivedQty = 0;
+    });
 
     res.json({ success: true, data: entry });
   } catch (err) {
@@ -122,6 +155,7 @@ export const createPurchaseEntry = async (req, res, next) => {
     const grandTotal = subtotal + totalGST;
 
     const purchaseNumber = await generatePurchaseNumber(req.user.company);
+    await ensureSupplierParty(req.user.company, supplierName, supplierPhone, supplierGST);
 
     const entry = await PurchaseEntry.create({
       company: req.user.company,
@@ -228,6 +262,7 @@ export const receivePurchaseEntry = async (req, res, next) => {
       resolvedWarehouseId = defaultWH._id;
     }
 
+    if (!entry.items) entry.items = [];
     let totalReceivedValue = entry.totalReceivedValue || 0;
 
     for (const recv of receivedItems) {
@@ -321,8 +356,8 @@ export const receivePurchaseEntry = async (req, res, next) => {
     }
 
     // Update entry status
-    const allReceived = entry.items.every(i => i.receivedQty >= i.orderedQty);
-    const anyReceived = entry.items.some(i => i.receivedQty > 0);
+    const allReceived = entry.items.every(i => (i.receivedQty || 0) >= i.orderedQty);
+    const anyReceived = entry.items.some(i => (i.receivedQty || 0) > 0);
 
     entry.status = allReceived ? 'received' : anyReceived ? 'partially_received' : entry.status;
     entry.totalReceivedValue = totalReceivedValue;
@@ -332,6 +367,8 @@ export const receivePurchaseEntry = async (req, res, next) => {
     }
     if (notes) entry.notes = (entry.notes ? entry.notes + '\n' : '') + notes;
 
+    // CRITICAL: tell Mongoose the items subdocument array was mutated
+    entry.markModified('items');
     await entry.save();
 
     const populated = await PurchaseEntry.findById(entry._id)
