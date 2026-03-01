@@ -44,10 +44,11 @@ const ensureSupplierParty = async (companyId, supplierName, supplierPhone, suppl
       await Party.create({
         company: companyId,
         name: supplierName.trim(),
-        phone: supplierPhone || '',
-        gstin: supplierGST || '',
+        phone: supplierPhone?.trim() || undefined,
+        gstNumber: supplierGST?.trim() || undefined,
         type: 'supplier',
       });
+      console.log(`Auto-created supplier party: ${supplierName.trim()}`);
     }
   } catch (e) {
     // Non-fatal — party creation failure should not block PO save
@@ -313,6 +314,23 @@ export const receivePurchaseEntry = async (req, res, next) => {
         await newItem.save();
         invItemId = newItem._id;
 
+        // Log stock movement for new item
+        await StockMovement.create({
+          company: req.user.company,
+          item: invItemId,
+          warehouse: resolvedWarehouseId,
+          location: locationId,
+          type: 'IN',
+          reason: 'purchase',
+          quantity: actualQty,
+          beforeQty: 0,
+          afterQty: actualQty,
+          unitPrice: entryItem.unitPrice || 0,
+          totalValue: (entryItem.unitPrice || 0) * actualQty,
+          performedBy: req.user.id,
+          notes: `GRN: ${entry.purchaseNumber}${entry.supplierName ? \` from ${entry.supplierName}\` : ''} (new item created)`,
+        });
+
         // Link back to entry item
         entryItem.inventoryItem = invItemId;
         entryItem.isNewItem = false; // mark as created
@@ -339,7 +357,7 @@ export const receivePurchaseEntry = async (req, res, next) => {
           await StockMovement.create({
             company: req.user.company,
             item: invItemId,
-            warehouse: warehouseId,
+            warehouse: resolvedWarehouseId,
             location: locationId,
             type: 'IN',
             reason: 'purchase',
