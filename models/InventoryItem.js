@@ -56,7 +56,7 @@ inventoryItemSchema.virtual('isLowStock').get(function () {
 
 // Sum of locationStock — should match currentStock
 inventoryItemSchema.virtual('totalLocationStock').get(function () {
-  return this.locationStock.reduce((sum, ls) => sum + (ls.currentStock || 0), 0);
+  return (this.locationStock || []).reduce((sum, ls) => sum + (ls.currentStock || 0), 0);
 });
 
 inventoryItemSchema.set('toJSON', { virtuals: true });
@@ -64,11 +64,13 @@ inventoryItemSchema.set('toObject', { virtuals: true });
 
 // ── Instance method: sync currentStock from locationStock sum ─────────────────
 inventoryItemSchema.methods.syncTotalStock = function () {
+  if (!this.locationStock) this.locationStock = [];
   this.currentStock = this.locationStock.reduce((sum, ls) => sum + (ls.currentStock || 0), 0);
 };
 
 // ── Instance method: get or create locationStock entry for a warehouse/location
 inventoryItemSchema.methods.getLocationEntry = function (warehouseId, locationId = null) {
+  if (!this.locationStock) this.locationStock = [];
   const whStr = warehouseId?.toString();
   const locStr = locationId?.toString() || null;
 
@@ -95,8 +97,9 @@ inventoryItemSchema.methods.getLocationEntry = function (warehouseId, locationId
 
 // ── Instance method: add stock to a specific warehouse/location ───────────────
 inventoryItemSchema.methods.addToLocation = function (warehouseId, locationId, qty) {
+  if (!this.locationStock) this.locationStock = [];
   const entry = this.getLocationEntry(warehouseId, locationId);
-  entry.currentStock += qty;
+  entry.currentStock += Number(qty) || 0;
   this.syncTotalStock();
 };
 
