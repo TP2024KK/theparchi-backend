@@ -328,7 +328,7 @@ export const receivePurchaseEntry = async (req, res, next) => {
           unitPrice: entryItem.unitPrice || 0,
           totalValue: (entryItem.unitPrice || 0) * actualQty,
           performedBy: req.user.id,
-          notes: `GRN: ${entry.purchaseNumber}${entry.supplierName ? \` from ${entry.supplierName}\` : ''} (new item created)`,
+          notes: `GRN: ${entry.purchaseNumber}${entry.supplierName ? ' from ' + entry.supplierName : ''} (new item created)`,
         });
 
         // Link back to entry item
