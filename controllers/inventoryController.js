@@ -523,9 +523,19 @@ export const downloadBulkTemplate = async (req, res, next) => {
 // \u2500\u2500 POST /api/inventory/bulk-validate \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 export const bulkValidateInventory = async (req, res, next) => {
   try {
-    const { rows } = req.body;
+    const { rows, templateId } = req.body;
     if (!rows || !Array.isArray(rows))
       return res.status(400).json({ success: false, message: 'No rows provided' });
+
+    // Get custom column names for this template (if any)
+    let customColumnNames = [];
+    if (templateId) {
+      const company = await Company.findById(req.user.company).select('challanTemplates').lean();
+      const template = company?.challanTemplates?.find(t => t._id?.toString() === templateId);
+      if (template?.customColumns?.length) {
+        customColumnNames = template.customColumns.map(c => c.name.trim());
+      }
+    }
 
     const previews = [];
     let creates = 0, updates = 0, errors = 0;
@@ -550,6 +560,13 @@ export const bulkValidateInventory = async (req, res, next) => {
         gstRate: parseFloat(row.gstRate) || 0, description: row.description || '',
         warehouseName: row.warehouseName || '', locationName: row.locationName || '',
         isUpdate: !!existing, hasErrors: rowErrors.length > 0, errors: rowErrors,
+        customFields: customColumnNames.reduce((acc, colName) => {
+          const val = row[colName] !== undefined ? row[colName] : '';
+          if (val !== '') acc[colName] = val;
+          return acc;
+        }, {}),
+        templateId: templateId || null,
+        templateName: templateId ? (await Company.findById(req.user.company).select('challanTemplates').lean())?.challanTemplates?.find(t => t._id?.toString() === templateId)?.name || null : null,
       };
 
       previews.push(preview);
@@ -565,9 +582,17 @@ export const bulkValidateInventory = async (req, res, next) => {
 // \u2500\u2500 POST /api/inventory/bulk-upload \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
 export const bulkUploadInventory = async (req, res, next) => {
   try {
-    const { previews } = req.body;
+    const { previews, templateId } = req.body;
     if (!previews?.length)
       return res.status(400).json({ success: false, message: 'No items provided' });
+
+    // Get template name for keying customFields
+    let templateName = null;
+    if (templateId) {
+      const company = await Company.findById(req.user.company).select('challanTemplates').lean();
+      const template = company?.challanTemplates?.find(t => t._id?.toString() === templateId);
+      templateName = template?.name || null;
+    }
 
     const created = [], updated = [], failed = [];
     const defaultWH = await ensureDefaultWarehouse(req.user.company);
@@ -606,6 +631,10 @@ export const bulkUploadInventory = async (req, res, next) => {
           existing.category = row.category || '';
           existing.hsnCode = row.hsnCode || '';
           existing.gstRate = parseFloat(row.gstRate) || 0;
+          // Merge customFields under template name key
+          if (templateName && row.customFields && Object.keys(row.customFields).length > 0) {
+            existing.customFields = { ...(existing.customFields || {}), [templateName]: row.customFields };
+          }
           await existing.save();
           updated.push({ sku: row.sku, name: row.name });
         } else {
@@ -619,6 +648,10 @@ export const bulkUploadInventory = async (req, res, next) => {
             reorderPoint: row.reorderPoint || 0, category: row.category || '',
             hsnCode: row.hsnCode || '', gstRate: parseFloat(row.gstRate) || 0,
             currentStock: 0,
+            // Store customFields under template name key e.g. { "LOOM": { "Size": "XL", "Item Id": "2848970" } }
+            customFields: (templateName && row.customFields && Object.keys(row.customFields).length > 0)
+              ? { [templateName]: row.customFields }
+              : {},
           });
 
           if (row.currentStock > 0) {

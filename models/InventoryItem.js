@@ -40,6 +40,10 @@ const inventoryItemSchema = new mongoose.Schema({
   avgPurchasePrice: { type: Number, default: 0 }, // weighted average (for valuation)
   lastPurchasePrice: { type: Number, default: 0 },
 
+  // ── Custom Fields (from template bulk uploads) ────────────────────────────
+  // Keyed by template name: { "LOOM": { "Size": "XL", "Item Id": "2848970" }, "FABRIC": { ... } }
+  customFields: { type: mongoose.Schema.Types.Mixed, default: {} },
+
   notes: String,
   isActive: { type: Boolean, default: true }
 }, { timestamps: true });
